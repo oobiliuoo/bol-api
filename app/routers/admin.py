@@ -1125,12 +1125,30 @@ def get_admin_html() -> str:
         /* Channels table column widths */
         #channels-table th:nth-child(1), #channels-table td:nth-child(1) { width: 60px; }
         #channels-table th:nth-child(2), #channels-table td:nth-child(2) { width: 140px; }
-        #channels-table th:nth-child(3), #channels-table td:nth-child(3) { width: 100px; }
-        #channels-table th:nth-child(4), #channels-table td:nth-child(4) { width: 80px; }
-        #channels-table th:nth-child(5), #channels-table td:nth-child(5) { width: auto; min-width: 200px; }
+        #channels-table th:nth-child(3), #channels-table td:nth-child(3) { width: 80px; }
+        #channels-table th:nth-child(4), #channels-table td:nth-child(4) { width: auto; min-width: 200px; }
+        #channels-table th:nth-child(5), #channels-table td:nth-child(5) { width: 80px; }
         #channels-table th:nth-child(6), #channels-table td:nth-child(6) { width: 80px; }
-        #channels-table th:nth-child(7), #channels-table td:nth-child(7) { width: 80px; }
-        #channels-table th:nth-child(8), #channels-table td:nth-child(8) { width: 180px; text-align: right; }
+        #channels-table th:nth-child(7), #channels-table td:nth-child(7) { width: 180px; text-align: right; }
+
+        /* Model tags container */
+        .model-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            max-width: 400px;
+        }
+        .model-tag {
+            font-family: 'JetBrains Mono';
+            font-size: 11px;
+            background: var(--bg-elevated);
+            padding: 2px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 150px;
+        }
 
         /* Prices table column widths */
         #prices-table th:nth-child(1), #prices-table td:nth-child(1) { width: 60px; }
@@ -1438,7 +1456,6 @@ def get_admin_html() -> str:
                         <tr>
                             <th>ID</th>
                             <th>名称</th>
-                            <th>提供商</th>
                             <th>协议</th>
                             <th>模型</th>
                             <th>状态</th>
@@ -1807,7 +1824,7 @@ def get_admin_html() -> str:
             if (channels.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="8">
+                        <td colspan="7">
                                 <div class="empty-state-icon">📡</div>
                                 <div>暂无渠道配置，请添加一个以启用 API 代理</div>
                             </div>
@@ -1822,16 +1839,15 @@ def get_admin_html() -> str:
                     <td><span style="font-family: 'JetBrains Mono'; color: var(--text-muted);">#${c.id}</span></td>
                     <td>${c.name}</td>
                     <td>
-                        <span class="provider-badge provider-${c.provider_type}">${c.provider_type}</span>
-                    </td>
-                    <td>
                         <span class="provider-badge provider-${c.api_protocol || 'openai'}">${c.api_protocol || 'openai'}</span>
                     </td>
                     <td>
-                        ${c.models.length > 0
-                            ? c.models.map(m => `<span style="font-family: 'JetBrains Mono'; font-size: 11px; background: var(--bg-elevated); padding: 2px 6px; border-radius: 3px; margin-right: 4px;">${m}</span>`).join('')
-                            : '<span style="color: var(--text-muted);">全部</span>'
-                        }
+                        <div class="model-tags">
+                            ${c.models.length > 0
+                                ? c.models.map(m => `<span class="model-tag">${m}</span>`).join('')
+                                : '<span style="color: var(--text-muted);">全部</span>'
+                            }
+                        </div>
                     </td>
                     <td>
                         <span class="badge ${c.is_active ? 'badge-active' : 'badge-disabled'}">
