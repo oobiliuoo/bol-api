@@ -1114,6 +1114,43 @@ def get_admin_html() -> str:
             background: rgba(255,255,255,0.02);
         }
 
+        /* Keys table column widths */
+        #keys-table th:nth-child(1), #keys-table td:nth-child(1) { width: 60px; }
+        #keys-table th:nth-child(2), #keys-table td:nth-child(2) { width: 150px; }
+        #keys-table th:nth-child(3), #keys-table td:nth-child(3) { width: 200px; }
+        #keys-table th:nth-child(4), #keys-table td:nth-child(4) { width: 80px; }
+        #keys-table th:nth-child(5), #keys-table td:nth-child(5) { width: 140px; }
+        #keys-table th:nth-child(6), #keys-table td:nth-child(6) { width: 120px; text-align: right; }
+
+        /* Channels table column widths */
+        #channels-table th:nth-child(1), #channels-table td:nth-child(1) { width: 60px; }
+        #channels-table th:nth-child(2), #channels-table td:nth-child(2) { width: 140px; }
+        #channels-table th:nth-child(3), #channels-table td:nth-child(3) { width: 100px; }
+        #channels-table th:nth-child(4), #channels-table td:nth-child(4) { width: 80px; }
+        #channels-table th:nth-child(5), #channels-table td:nth-child(5) { width: auto; min-width: 200px; }
+        #channels-table th:nth-child(6), #channels-table td:nth-child(6) { width: 80px; }
+        #channels-table th:nth-child(7), #channels-table td:nth-child(7) { width: 80px; }
+        #channels-table th:nth-child(8), #channels-table td:nth-child(8) { width: 180px; text-align: right; }
+
+        /* Prices table column widths */
+        #prices-table th:nth-child(1), #prices-table td:nth-child(1) { width: 60px; }
+        #prices-table th:nth-child(2), #prices-table td:nth-child(2) { width: 180px; }
+        #prices-table th:nth-child(3), #prices-table td:nth-child(3) { width: 120px; }
+        #prices-table th:nth-child(4), #prices-table td:nth-child(4) { width: 120px; }
+        #prices-table th:nth-child(5), #prices-table td:nth-child(5) { width: 80px; }
+        #prices-table th:nth-child(6), #prices-table td:nth-child(6) { width: 180px; text-align: right; }
+
+        /* Action buttons container */
+        .action-btns {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        .action-btns .btn {
+            padding: 4px 12px;
+            font-size: 12px;
+        }
+
         .empty-state {
             text-align: center;
             padding: 40px 24px;
@@ -1666,10 +1703,10 @@ def get_admin_html() -> str:
                     </td>
                     <td><span style="font-family: 'JetBrains Mono'; font-size: 12px; color: var(--text-muted);">${formatDate(k.created_at)}</span></td>
                     <td>
-                        <button class="btn ${k.is_active ? 'btn-danger' : 'btn-success'}" onclick="toggleKey(${k.id}, ${!k.is_active})">
-                            ${k.is_active ? '禁用' : '启用'}
-                        </button>
-                        <button class="btn btn-danger" onclick="deleteKey(${k.id})">删除</button>
+                        <div class="action-btns">
+                            <button class="btn ${k.is_active ? '' : 'btn-primary'}" style="${k.is_active ? 'border-color: var(--border); color: var(--text-muted);' : ''}" onclick="toggleKey(${k.id}, ${!k.is_active})">${k.is_active ? '禁用' : '启用'}</button>
+                            <button class="btn btn-danger" onclick="deleteKey(${k.id})">删除</button>
+                        </div>
                     </td>
                 </tr>
             `).join('');
@@ -1806,10 +1843,12 @@ def get_admin_html() -> str:
                         <span style="color: var(--text-muted); font-family: 'JetBrains Mono'; font-size: 12px;">—</span>
                     </td>
                     <td>
-                        <button class="btn ${c.is_active ? '' : 'btn-primary'}" style="border-color: ${c.is_active ? 'var(--border)' : 'var(--accent)'}; color: ${c.is_active ? 'var(--text-muted)' : 'var(--accent)'};" onclick="toggleChannel(${c.id}, ${!c.is_active})">${c.is_active ? '禁用' : '启用'}</button>
-                        <button class="btn" style="border-color: rgba(0, 217, 255, 0.3); color: var(--accent);" onclick="testChannel(${c.id})" id="test-btn-${c.id}">测试</button>
-                        <button class="btn" style="border-color: var(--border);" onclick="editChannel(${c.id})">编辑</button>
-                        <button class="btn btn-danger" onclick="deleteChannel(${c.id})">删除</button>
+                        <div class="action-btns">
+                            <button class="btn ${c.is_active ? '' : 'btn-primary'}" style="${c.is_active ? 'border-color: var(--border); color: var(--text-muted);' : ''}" onclick="toggleChannel(${c.id}, ${!c.is_active})">${c.is_active ? '禁用' : '启用'}</button>
+                            <button class="btn" style="border-color: rgba(0, 217, 255, 0.3); color: var(--accent);" onclick="testChannel(${c.id})" id="test-btn-${c.id}">测试</button>
+                            <button class="btn" style="border-color: var(--border);" onclick="editChannel(${c.id})">编辑</button>
+                            <button class="btn btn-danger" onclick="deleteChannel(${c.id})">删除</button>
+                        </div>
                     </td>
                 </tr>
             `).join('');
@@ -2040,9 +2079,11 @@ def get_admin_html() -> str:
                         </span>
                     </td>
                     <td>
-                        <button class="btn ${p.is_active ? '' : 'btn-primary'}" style="border-color: ${p.is_active ? 'var(--border)' : 'var(--accent)'}; color: ${p.is_active ? 'var(--text-muted)' : 'var(--accent)'};" onclick="togglePrice(${p.id}, ${!p.is_active})">${p.is_active ? '禁用' : '启用'}</button>
-                        <button class="btn" style="border-color: var(--border);" onclick="editPrice(${p.id})">编辑</button>
-                        <button class="btn btn-danger" onclick="deletePrice(${p.id})">删除</button>
+                        <div class="action-btns">
+                            <button class="btn ${p.is_active ? '' : 'btn-primary'}" style="${p.is_active ? 'border-color: var(--border); color: var(--text-muted);' : ''}" onclick="togglePrice(${p.id}, ${!p.is_active})">${p.is_active ? '禁用' : '启用'}</button>
+                            <button class="btn" style="border-color: var(--border);" onclick="editPrice(${p.id})">编辑</button>
+                            <button class="btn btn-danger" onclick="deletePrice(${p.id})">删除</button>
+                        </div>
                     </td>
                 </tr>
             `).join('');
