@@ -2,7 +2,7 @@ import secrets
 import hashlib
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import APIKey, Channel, UsageLog
+from app.db.models import APIKey, Channel, UsageLog, ModelPrice
 from datetime import datetime, timedelta
 from typing import Optional, List
 
@@ -216,3 +216,71 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
         "period": period_label,
         "hours": hours
     }
+
+
+# 模型价格管理
+async def create_model_price(session: AsyncSession, model: str, input_price: float, output_price: float) -> ModelPrice:
+    """创建模型价格配置"""
+    price = ModelPrice(
+        model=model,
+        input_price=input_price,
+        output_price=output_price
+    )
+    session.add(price)
+    await session.commit()
+    await session.refresh(price)
+    return price
+
+
+async def get_all_model_prices(session: AsyncSession) -> List[ModelPrice]:
+    """获取所有模型价格配置"""
+    result = await session.execute(select(ModelPrice).order_by(ModelPrice.model))
+    return result.scalars().all()
+
+
+async def get_model_price(session: AsyncSession, model: str) -> Optional[ModelPrice]:
+    """获取特定模型的价格配置"""
+    result = await session.execute(select(ModelPrice).where(ModelPrice.model == model))
+    return result.scalar_one_or_none()
+
+
+async def get_model_price_by_id(session: AsyncSession, price_id: int) -> Optional[ModelPrice]:
+    """通过ID获取价格配置"""
+    result = await session.execute(select(ModelPrice).where(ModelPrice.id == price_id))
+    return result.scalar_one_or_none()
+
+
+async def update_model_price(session: AsyncSession, price_id: int, **kwargs) -> Optional[ModelPrice]:
+    """更新模型价格配置"""
+    result = await session.execute(select(ModelPrice).where(ModelPrice.id == price_id))
+    price = result.scalar_one_or_none()
+    if price:
+        for key, value in kwargs.items():
+            setattr(price, key, value)
+        await session.commit()
+        await session.refresh(price)
+        return price
+    return None
+
+
+async def toggle_model_price(session: AsyncSession, price_id: int, is_active: bool) -> Optional[ModelPrice]:
+    """切换模型价格启用/禁用状态"""
+    result = await session.execute(select(ModelPrice).where(ModelPrice.id == price_id))
+    price = result.scalar_one_or_none()
+    if price:
+        price.is_active = is_active
+        await session.commit()
+        await session.refresh(price)
+        return price
+    return None
+
+
+async def delete_model_price(session: AsyncSession, price_id: int) -> bool:
+    """删除模型价格配置"""
+    result = await session.execute(select(ModelPrice).where(ModelPrice.id == price_id))
+    price = result.scalar_one_or_none()
+    if price:
+        await session.delete(price)
+        await session.commit()
+        return True
+    return False

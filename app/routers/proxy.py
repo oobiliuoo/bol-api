@@ -42,7 +42,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
     try:
         if stream:
             return StreamingResponse(
-                stream_chat_response(provider, body, channel, api_key_id, request),
+                stream_chat_response(provider, body, channel, api_key_id, request, db),
                 media_type="text/event-stream"
             )
         else:
@@ -53,7 +53,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
             usage = provider.extract_usage(response)
 
             # 记录用量
-            cost = calculate_cost(channel.provider_type, model, usage["request_tokens"], usage["response_tokens"])
+            cost = await calculate_cost(db, model, usage["request_tokens"], usage["response_tokens"])
             await UsageRecorder.record(
                 api_key_id=api_key_id,
                 channel_id=channel.id,
@@ -82,7 +82,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def stream_chat_response(provider, body, channel, api_key_id, request):
+async def stream_chat_response(provider, body, channel, api_key_id, request, db):
     """流式响应处理"""
     start_time = time.time()
     total_content = ""
@@ -105,7 +105,7 @@ async def stream_chat_response(provider, body, channel, api_key_id, request):
         latency_ms = int((time.time() - start_time) * 1000)
         # 流式响应没有准确的token计数，用内容长度估算
         estimated_tokens = len(total_content) // 4
-        cost = calculate_cost(channel.provider_type, model, 0, estimated_tokens)
+        cost = await calculate_cost(db, model, 0, estimated_tokens)
         await UsageRecorder.record(
             api_key_id=api_key_id,
             channel_id=channel.id,
@@ -146,7 +146,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
     try:
         if stream:
             return StreamingResponse(
-                stream_anthropic_response(provider, body, channel, api_key_id, request),
+                stream_anthropic_response(provider, body, channel, api_key_id, request, db),
                 media_type="text/event-stream"
             )
         else:
@@ -154,7 +154,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
             latency_ms = int((time.time() - start_time) * 1000)
 
             usage = provider.extract_usage(response)
-            cost = calculate_cost(channel.provider_type, model, usage["request_tokens"], usage["response_tokens"])
+            cost = await calculate_cost(db, model, usage["request_tokens"], usage["response_tokens"])
             await UsageRecorder.record(
                 api_key_id=api_key_id,
                 channel_id=channel.id,
@@ -183,7 +183,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def stream_anthropic_response(provider, body, channel, api_key_id, request):
+async def stream_anthropic_response(provider, body, channel, api_key_id, request, db):
     """Anthropic流式响应处理"""
     start_time = time.time()
     total_content = ""
@@ -213,7 +213,7 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
         latency_ms = int((time.time() - start_time) * 1000)
         if output_tokens == 0:
             output_tokens = len(total_content) // 4
-        cost = calculate_cost(channel.provider_type, model, input_tokens, output_tokens)
+        cost = await calculate_cost(db, model, input_tokens, output_tokens)
         await UsageRecorder.record(
             api_key_id=api_key_id,
             channel_id=channel.id,

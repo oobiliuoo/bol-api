@@ -1,8 +1,9 @@
 import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import async_session
-from app.db.crud import create_usage_log
+from app.db.crud import create_usage_log, get_model_price
 
 
 class UsageRecorder:
@@ -54,19 +55,14 @@ class UsageRecorder:
                 print(f"Error recording usage: {e}")
 
 
-def calculate_cost(provider: str, model: str, request_tokens: int, response_tokens: int) -> float:
-    """计算费用（简单估算）"""
-    # 简化价格表，实际应该从配置读取
-    prices = {
-        "gpt-4": {"input": 0.03, "output": 0.06},  # 每1k tokens
-        "gpt-4-turbo": {"input": 0.01, "output": 0.03},
-        "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
-        "claude-3-opus": {"input": 0.015, "output": 0.075},
-        "claude-3-sonnet": {"input": 0.003, "output": 0.015},
-        "claude-3-haiku": {"input": 0.00025, "output": 0.00125},
-    }
+async def calculate_cost(session: AsyncSession, model: str, request_tokens: int, response_tokens: int) -> float:
+    """计算费用，使用 $/M (每百万token) 单位"""
+    price = await get_model_price(session, model)
 
-    price = prices.get(model, {"input": 0.001, "output": 0.002})  # 默认价格
-    input_cost = (request_tokens / 1000) * price["input"]
-    output_cost = (response_tokens / 1000) * price["output"]
+    if not price or not price.is_active:
+        # 无价格配置时返回0
+        return 0.0
+
+    input_cost = (request_tokens / 1_000_000) * price.input_price
+    output_cost = (response_tokens / 1_000_000) * price.output_price
     return input_cost + output_cost

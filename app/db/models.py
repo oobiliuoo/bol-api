@@ -36,6 +36,18 @@ class Channel(Base):
     usage_logs = relationship("UsageLog", back_populates="channel")
 
 
+class ModelPrice(Base):
+    __tablename__ = "model_prices"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    model = Column(String(100), unique=True, nullable=False, index=True)  # 模型名称
+    input_price = Column(Float, default=0.0)   # 输入价格 $/M (每百万token)
+    output_price = Column(Float, default=0.0)  # 输出价格 $/M
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class UsageLog(Base):
     __tablename__ = "usage_logs"
 

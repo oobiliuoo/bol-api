@@ -2,7 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import async_session
-from app.db.crud import create_channel, get_all_channels, update_channel, delete_channel, toggle_channel
+from app.db.crud import (
+    create_channel, get_all_channels, update_channel, delete_channel, toggle_channel,
+    create_model_price, get_all_model_prices, update_model_price, delete_model_price,
+    toggle_model_price, get_model_price_by_id
+)
 from app.channels.models import ChannelCreate, ChannelUpdate, ChannelResponse
 from app.config import settings
 import os
@@ -282,6 +286,109 @@ async def test_channel_route(
             "latency_ms": latency_ms,
             "error": error_msg
         }
+
+
+# 模型价格管理
+@router.get("/admin/prices")
+async def list_prices(
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_admin)
+):
+    """列出所有模型价格配置"""
+    prices = await get_all_model_prices(db)
+    return [
+        {
+            "id": p.id,
+            "model": p.model,
+            "input_price": p.input_price,
+            "output_price": p.output_price,
+            "is_active": p.is_active,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+            "updated_at": p.updated_at.isoformat() if p.updated_at else None
+        }
+        for p in prices
+    ]
+
+
+@router.post("/admin/prices")
+async def create_price_route(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_admin)
+):
+    """创建模型价格配置"""
+    body = await request.json()
+    model = body.get("model")
+    input_price = body.get("input_price", 0.0)
+    output_price = body.get("output_price", 0.0)
+
+    if not model:
+        raise HTTPException(status_code=400, detail="Model name is required")
+
+    price = await create_model_price(db, model, input_price, output_price)
+    return {
+        "id": price.id,
+        "model": price.model,
+        "input_price": price.input_price,
+        "output_price": price.output_price,
+        "is_active": price.is_active
+    }
+
+
+@router.patch("/admin/prices/{price_id}")
+async def update_price_route(
+    price_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_admin)
+):
+    """更新模型价格配置"""
+    body = await request.json()
+    price = await update_model_price(db, price_id, **body)
+    if not price:
+        raise HTTPException(status_code=404, detail="Price config not found")
+    return {
+        "id": price.id,
+        "model": price.model,
+        "input_price": price.input_price,
+        "output_price": price.output_price,
+        "is_active": price.is_active
+    }
+
+
+@router.post("/admin/prices/{price_id}/toggle")
+async def toggle_price_route(
+    price_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_admin)
+):
+    """切换模型价格启用/禁用状态"""
+    body = await request.json()
+    is_active = body.get("is_active", True)
+    price = await toggle_model_price(db, price_id, is_active)
+    if not price:
+        raise HTTPException(status_code=404, detail="Price config not found")
+    return {
+        "id": price.id,
+        "model": price.model,
+        "input_price": price.input_price,
+        "output_price": price.output_price,
+        "is_active": price.is_active
+    }
+
+
+@router.delete("/admin/prices/{price_id}")
+async def delete_price_route(
+    price_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_admin)
+):
+    """删除模型价格配置"""
+    success = await delete_model_price(db, price_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Price config not found")
+    return {"message": "Price config deleted"}
 
 
 def get_login_page() -> str:
@@ -1306,6 +1413,34 @@ def get_admin_html() -> str:
                 </table>
             </div>
         </div>
+
+        <!-- Prices Section -->
+        <div class="section">
+            <div class="section-header">
+                <div>
+                    <span class="section-title">模型价格</span>
+                    <span class="section-title-code">$/M (每百万token)</span>
+                </div>
+                <button class="btn btn-primary" onclick="showPriceModal()">
+                    <span>+ Add Price</span>
+                </button>
+            </div>
+            <div class="table-container">
+                <table id="prices-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>模型名称</th>
+                            <th>输入价格</th>
+                            <th>输出价格</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
     </main>
 
     <!-- Key Modal -->
@@ -1397,6 +1532,36 @@ def get_admin_html() -> str:
             <div class="modal-footer">
                 <button class="btn" onclick="closeChannelModal()">取消</button>
                 <button class="btn btn-primary" onclick="saveChannel()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Price Modal -->
+    <div class="modal-overlay" id="price-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title" id="price-modal-title">添加模型价格</span>
+                <div class="modal-close" onclick="closePriceModal()">✕</div>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>模型名称</label>
+                    <input type="text" id="price-model" placeholder="例如：gpt-4-turbo">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>输入价格 ($/M)</label>
+                        <input type="number" id="price-input" value="0" min="0" step="0.01" placeholder="输入token价格">
+                    </div>
+                    <div class="form-group">
+                        <label>输出价格 ($/M)</label>
+                        <input type="number" id="price-output" value="0" min="0" step="0.01" placeholder="输出token价格">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closePriceModal()">取消</button>
+                <button class="btn btn-primary" onclick="savePrice()">保存</button>
             </div>
         </div>
     </div>
@@ -1840,6 +2005,128 @@ def get_admin_html() -> str:
             }
         }
 
+        // 模型价格管理
+        let editingPriceId = null;
+
+        async function loadPrices() {
+            const res = await fetch('/admin/prices', {headers});
+            const prices = await res.json();
+            const tbody = document.querySelector('#prices-table tbody');
+
+            if (prices.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6">
+                            <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                <div class="empty-state-icon">💰</div>
+                                <div>暂无价格配置，请添加模型价格以计算费用</div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = prices.map(p => `
+                <tr>
+                    <td><span style="font-family: 'JetBrains Mono'; color: var(--text-muted);">#${p.id}</span></td>
+                    <td style="font-family: 'JetBrains Mono';">${p.model}</td>
+                    <td style="font-family: 'JetBrains Mono';">$${p.input_price.toFixed(2)}/M</td>
+                    <td style="font-family: 'JetBrains Mono';">$${p.output_price.toFixed(2)}/M</td>
+                    <td>
+                        <span class="badge ${p.is_active ? 'badge-active' : 'badge-disabled'}">
+                            <span class="badge-dot"></span>
+                            ${p.is_active ? '启用' : '禁用'}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn ${p.is_active ? '' : 'btn-primary'}" style="border-color: ${p.is_active ? 'var(--border)' : 'var(--accent)'}; color: ${p.is_active ? 'var(--text-muted)' : 'var(--accent)'};" onclick="togglePrice(${p.id}, ${!p.is_active})">${p.is_active ? '禁用' : '启用'}</button>
+                        <button class="btn" style="border-color: var(--border);" onclick="editPrice(${p.id})">编辑</button>
+                        <button class="btn btn-danger" onclick="deletePrice(${p.id})">删除</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function showPriceModal() {
+            editingPriceId = null;
+            document.getElementById('price-modal').classList.add('show');
+            document.getElementById('price-modal-title').textContent = '添加模型价格';
+            document.getElementById('price-model').value = '';
+            document.getElementById('price-input').value = '0';
+            document.getElementById('price-output').value = '0';
+        }
+
+        async function editPrice(id) {
+            editingPriceId = id;
+            document.getElementById('price-modal').classList.add('show');
+            document.getElementById('price-modal-title').textContent = '编辑模型价格';
+
+            const res = await fetch('/admin/prices', {headers});
+            const prices = await res.json();
+            const p = prices.find(p => p.id === id);
+
+            if (p) {
+                document.getElementById('price-model').value = p.model;
+                document.getElementById('price-input').value = p.input_price;
+                document.getElementById('price-output').value = p.output_price;
+            }
+        }
+
+        function closePriceModal() {
+            editingPriceId = null;
+            document.getElementById('price-modal').classList.remove('show');
+        }
+
+        async function savePrice() {
+            const model = document.getElementById('price-model').value.trim();
+            const inputPrice = parseFloat(document.getElementById('price-input').value) || 0;
+            const outputPrice = parseFloat(document.getElementById('price-output').value) || 0;
+
+            if (!model) {
+                alert('请填写模型名称');
+                return;
+            }
+
+            const data = {
+                model,
+                input_price: inputPrice,
+                output_price: outputPrice
+            };
+
+            if (editingPriceId) {
+                await fetch(`/admin/prices/${editingPriceId}`, {
+                    method: 'PATCH',
+                    headers,
+                    body: JSON.stringify(data)
+                });
+            } else {
+                await fetch('/admin/prices', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(data)
+                });
+            }
+            closePriceModal();
+            loadPrices();
+        }
+
+        async function togglePrice(id, is_active) {
+            await fetch(`/admin/prices/${id}/toggle`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({is_active})
+            });
+            loadPrices();
+        }
+
+        async function deletePrice(id) {
+            if (confirm('确定删除此价格配置？')) {
+                await fetch(`/admin/prices/${id}`, {method: 'DELETE', headers});
+                loadPrices();
+            }
+        }
+
         // Model Stats (inline)
         async function loadModelStats(hours) {
             // 更新tab状态
@@ -2016,6 +2303,7 @@ def get_admin_html() -> str:
         loadStats();
         loadKeys();
         loadChannels();
+        loadPrices();
         loadModelStats(168);  // 默认显示周统计
 
         // Refresh stats periodically
