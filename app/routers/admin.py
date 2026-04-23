@@ -1116,20 +1116,20 @@ def get_admin_html() -> str:
 
         /* Keys table column widths */
         #keys-table th:nth-child(1), #keys-table td:nth-child(1) { width: 60px; }
-        #keys-table th:nth-child(2), #keys-table td:nth-child(2) { width: 150px; }
-        #keys-table th:nth-child(3), #keys-table td:nth-child(3) { width: 200px; }
+        #keys-table th:nth-child(2), #keys-table td:nth-child(2) { width: 180px; }
+        #keys-table th:nth-child(3), #keys-table td:nth-child(3) { width: auto; }
         #keys-table th:nth-child(4), #keys-table td:nth-child(4) { width: 80px; }
         #keys-table th:nth-child(5), #keys-table td:nth-child(5) { width: 140px; }
-        #keys-table th:nth-child(6), #keys-table td:nth-child(6) { width: 120px; text-align: right; }
+        #keys-table th:nth-child(6), #keys-table td:nth-child(6) { width: 200px; text-align: right; }
 
         /* Channels table column widths */
         #channels-table th:nth-child(1), #channels-table td:nth-child(1) { width: 60px; }
-        #channels-table th:nth-child(2), #channels-table td:nth-child(2) { width: 140px; }
+        #channels-table th:nth-child(2), #channels-table td:nth-child(2) { width: 180px; }
         #channels-table th:nth-child(3), #channels-table td:nth-child(3) { width: 80px; }
-        #channels-table th:nth-child(4), #channels-table td:nth-child(4) { width: auto; min-width: 200px; }
+        #channels-table th:nth-child(4), #channels-table td:nth-child(4) { width: auto; }
         #channels-table th:nth-child(5), #channels-table td:nth-child(5) { width: 80px; }
         #channels-table th:nth-child(6), #channels-table td:nth-child(6) { width: 80px; }
-        #channels-table th:nth-child(7), #channels-table td:nth-child(7) { width: 180px; text-align: right; }
+        #channels-table th:nth-child(7), #channels-table td:nth-child(7) { width: 200px; text-align: right; }
 
         /* Model tags container */
         .model-tags {
@@ -1156,7 +1156,7 @@ def get_admin_html() -> str:
         #prices-table th:nth-child(3), #prices-table td:nth-child(3) { width: 120px; }
         #prices-table th:nth-child(4), #prices-table td:nth-child(4) { width: 120px; }
         #prices-table th:nth-child(5), #prices-table td:nth-child(5) { width: 80px; }
-        #prices-table th:nth-child(6), #prices-table td:nth-child(6) { width: 180px; text-align: right; }
+        #prices-table th:nth-child(6), #prices-table td:nth-child(6) { width: 200px; text-align: right; }
 
         /* Action buttons container */
         .action-btns {
