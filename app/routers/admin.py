@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import async_session
-from app.db.crud import create_channel, get_all_channels, update_channel, delete_channel
+from app.db.crud import create_channel, get_all_channels, update_channel, delete_channel, toggle_channel
 from app.channels.models import ChannelCreate, ChannelUpdate, ChannelResponse
 from app.config import settings
 import os
@@ -131,6 +131,32 @@ async def delete_channel_route(
     if not success:
         raise HTTPException(status_code=404, detail="Channel not found")
     return {"message": "Channel deleted"}
+
+
+@router.post("/admin/channels/{channel_id}/toggle")
+async def toggle_channel_route(
+    channel_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_admin)
+):
+    """切换渠道启用/禁用状态"""
+    body = await request.json()
+    is_active = body.get("is_active", True)
+    channel = await toggle_channel(db, channel_id, is_active)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    return ChannelResponse(
+        id=channel.id,
+        name=channel.name,
+        provider_type=channel.provider_type,
+        api_protocol=channel.api_protocol or "openai",
+        base_url=channel.base_url,
+        models=channel.models,
+        is_active=channel.is_active,
+        priority=channel.priority,
+        weight=channel.weight
+    )
 
 
 @router.post("/admin/channels/fetch-models")
@@ -1615,6 +1641,7 @@ def get_admin_html() -> str:
                         <span style="color: var(--text-muted); font-family: 'JetBrains Mono'; font-size: 12px;">—</span>
                     </td>
                     <td>
+                        <button class="btn ${c.is_active ? '' : 'btn-primary'}" style="border-color: ${c.is_active ? 'var(--border)' : 'var(--accent)'}; color: ${c.is_active ? 'var(--text-muted)' : 'var(--accent)'};" onclick="toggleChannel(${c.id}, ${!c.is_active})">${c.is_active ? '禁用' : '启用'}</button>
                         <button class="btn" style="border-color: rgba(0, 217, 255, 0.3); color: var(--accent);" onclick="testChannel(${c.id})" id="test-btn-${c.id}">测试</button>
                         <button class="btn" style="border-color: var(--border);" onclick="editChannel(${c.id})">编辑</button>
                         <button class="btn btn-danger" onclick="deleteChannel(${c.id})">删除</button>
@@ -1794,6 +1821,15 @@ def get_admin_html() -> str:
                 });
             }
             closeChannelModal();
+            loadChannels();
+        }
+
+        async function toggleChannel(id, is_active) {
+            await fetch(`/admin/channels/${id}/toggle`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({is_active})
+            });
             loadChannels();
         }
 

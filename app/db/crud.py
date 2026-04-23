@@ -107,6 +107,18 @@ async def update_channel(session: AsyncSession, channel_id: int, **kwargs) -> Op
     return None
 
 
+async def toggle_channel(session: AsyncSession, channel_id: int, is_active: bool) -> Optional[Channel]:
+    """切换渠道启用/禁用状态"""
+    result = await session.execute(select(Channel).where(Channel.id == channel_id))
+    channel = result.scalar_one_or_none()
+    if channel:
+        channel.is_active = is_active
+        await session.commit()
+        await session.refresh(channel)
+        return channel
+    return None
+
+
 async def delete_channel(session: AsyncSession, channel_id: int) -> bool:
     result = await session.execute(select(Channel).where(Channel.id == channel_id))
     channel = result.scalar_one_or_none()
