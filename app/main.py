@@ -2,11 +2,13 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.db.database import init_db
 from app.auth.middleware import AuthMiddleware
 from app.stats.recorder import UsageRecorder
 from app.routers import proxy, keys, stats, admin
+import os
 
 
 @asynccontextmanager
@@ -38,6 +40,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 静态文件目录（不需要认证）
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # 认证中间件
 app.add_middleware(AuthMiddleware)

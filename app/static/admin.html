@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>bol-api // 控制面板</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="/static/css/admin.css" rel="stylesheet">
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">B</div>
+            <div class="logo-text">bol<span>-api</span></div>
+        </div>
+        <div class="header-status">
+            <div class="status-dot"></div>
+            <span>System Online</span>
+        </div>
+    </header>
+
+    <main class="main">
+        <h1 class="page-title">控制面板</h1>
+
+        <!-- Stats -->
+        <div class="stats-grid" id="stats"></div>
+
+        <!-- Model Usage Section -->
+        <div class="section" id="model-stats-section">
+            <div class="section-header">
+                <div>
+                    <span class="section-title">模型用量统计</span>
+                    <span class="section-title-code" id="model-stats-period">7天</span>
+                </div>
+                <div class="period-tabs-inline">
+                    <button class="period-tab-inline active" onclick="loadModelStats(5)">5时</button>
+                    <button class="period-tab-inline" onclick="loadModelStats(24)">日</button>
+                    <button class="period-tab-inline" onclick="loadModelStats(168)">周</button>
+                    <button class="period-tab-inline" onclick="loadModelStats(720)">月</button>
+                </div>
+            </div>
+            <div id="model-stats-container"></div>
+        </div>
+
+        <!-- API Keys Section -->
+        <div class="section">
+            <div class="section-header">
+                <div>
+                    <span class="section-title">API 密钥</span>
+                    <span class="section-title-code">/admin/keys</span>
+                </div>
+                <button class="btn btn-primary" onclick="showKeyModal()">
+                    <span>+ 新建密钥</span>
+                </button>
+            </div>
+            <div class="table-container">
+                <table id="keys-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>名称</th>
+                            <th>密钥</th>
+                            <th>状态</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Channels Section -->
+        <div class="section">
+            <div class="section-header">
+                <div>
+                    <span class="section-title">渠道管理</span>
+                    <span class="section-title-code">/admin/channels</span>
+                </div>
+                <button class="btn btn-primary" onclick="showChannelModal()">
+                    <span>+ Add Channel</span>
+                </button>
+            </div>
+            <div class="table-container">
+                <table id="channels-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>名称</th>
+                            <th>协议</th>
+                            <th>模型</th>
+                            <th>状态</th>
+                            <th>延迟</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Prices Section -->
+        <div class="section">
+            <div class="section-header">
+                <div>
+                    <span class="section-title">模型价格</span>
+                    <span class="section-title-code">$/M (每百万token)</span>
+                </div>
+                <button class="btn btn-primary" onclick="showPriceModal()">
+                    <span>+ Add Price</span>
+                </button>
+            </div>
+            <div class="table-container">
+                <table id="prices-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>模型名称</th>
+                            <th>输入价格</th>
+                            <th>输出价格</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Key Modal -->
+    <div class="modal-overlay" id="key-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">创建 API 密钥</span>
+                <div class="modal-close" onclick="closeKeyModal()">✕</div>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>密钥名称（可选）</label>
+                    <input type="text" id="key-name" placeholder="例如：生产环境应用">
+                </div>
+                <div id="key-result" style="display:none;">
+                    <div class="form-group">
+                        <label>新 API 密钥（请保存，仅显示一次）</label>
+                        <div class="key-display">
+                            <span id="key-value"></span>
+                            <button class="btn key-copy-btn" onclick="copyKey()">复制</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeKeyModal()">取消</button>
+                <button class="btn btn-primary" id="key-create-btn" onclick="createKey()">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Channel Modal -->
+    <div class="modal-overlay" id="channel-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title" id="modal-title">添加渠道</span>
+                <div class="modal-close" onclick="closeChannelModal()">✕</div>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>渠道名称</label>
+                    <input type="text" id="channel-name" placeholder="例如：OpenAI 生产环境">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>提供商类型</label>
+                        <select id="channel-type">
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>API 协议</label>
+                        <select id="channel-protocol">
+                            <option value="openai">OpenAI 格式</option>
+                            <option value="anthropic">Anthropic 格式</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>优先级</label>
+                        <input type="number" id="channel-priority" value="1" min="1" max="100">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>基础 URL</label>
+                    <input type="text" id="channel-url" placeholder="https://api.openai.com">
+                </div>
+                <div class="form-group">
+                    <label>API 密钥</label>
+                    <div style="display: flex; gap: 8px; align-items: stretch;">
+                        <input type="text" id="channel-apikey" placeholder="sk-..." style="flex: 1;">
+                        <span id="key-status" style="display: none; padding: 0 10px; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 6px; color: var(--success); font-size: 12px; font-weight: 500; align-self: center;">✓ 已设置</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>模型（逗号分隔，留空表示全部）</label>
+                    <div style="display: flex; gap: 8px; align-items: stretch;">
+                        <input type="text" id="channel-models" placeholder="gpt-4, gpt-3.5-turbo" style="flex: 1;">
+                        <button class="btn" id="fetch-models-btn" onclick="fetchModels()" style="white-space: nowrap;">
+                            <span>↻ 拉取</span>
+                        </button>
+                    </div>
+                    <div id="fetch-models-status" style="margin-top: 8px; font-size: 12px; color: var(--text-muted); display: none;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeChannelModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveChannel()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Price Modal -->
+    <div class="modal-overlay" id="price-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title" id="price-modal-title">添加模型价格</span>
+                <div class="modal-close" onclick="closePriceModal()">✕</div>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>模型名称</label>
+                    <input type="text" id="price-model" placeholder="例如：gpt-4-turbo">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>输入价格 ($/M)</label>
+                        <input type="number" id="price-input" value="0" min="0" step="0.01" placeholder="输入token价格">
+                    </div>
+                    <div class="form-group">
+                        <label>输出价格 ($/M)</label>
+                        <input type="number" id="price-output" value="0" min="0" step="0.01" placeholder="输出token价格">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closePriceModal()">取消</button>
+                <button class="btn btn-primary" onclick="savePrice()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/admin.js"></script>
+</body>
+</html>
