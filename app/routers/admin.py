@@ -1115,28 +1115,35 @@ def get_admin_html() -> str:
         }
 
         /* Keys table column widths */
-        #keys-table th:nth-child(1), #keys-table td:nth-child(1) { width: 60px; }
-        #keys-table th:nth-child(2), #keys-table td:nth-child(2) { width: 180px; }
+        #keys-table th:nth-child(1), #keys-table td:nth-child(1) { width: 50px; min-width: 50px; }
+        #keys-table th:nth-child(2), #keys-table td:nth-child(2) { width: 140px; min-width: 140px; }
         #keys-table th:nth-child(3), #keys-table td:nth-child(3) { width: auto; }
-        #keys-table th:nth-child(4), #keys-table td:nth-child(4) { width: 80px; }
-        #keys-table th:nth-child(5), #keys-table td:nth-child(5) { width: 140px; }
-        #keys-table th:nth-child(6), #keys-table td:nth-child(6) { width: 200px; text-align: right; }
+        #keys-table th:nth-child(4), #keys-table td:nth-child(4) { width: 70px; min-width: 70px; }
+        #keys-table th:nth-child(5), #keys-table td:nth-child(5) { width: 130px; min-width: 130px; }
+        #keys-table th:nth-child(6), #keys-table td:nth-child(6) { width: 180px; min-width: 180px; }
 
         /* Channels table column widths */
-        #channels-table th:nth-child(1), #channels-table td:nth-child(1) { width: 60px; }
-        #channels-table th:nth-child(2), #channels-table td:nth-child(2) { width: 180px; }
-        #channels-table th:nth-child(3), #channels-table td:nth-child(3) { width: 80px; }
+        #channels-table th:nth-child(1), #channels-table td:nth-child(1) { width: 50px; min-width: 50px; }
+        #channels-table th:nth-child(2), #channels-table td:nth-child(2) { width: 140px; min-width: 140px; }
+        #channels-table th:nth-child(3), #channels-table td:nth-child(3) { width: 70px; min-width: 70px; }
         #channels-table th:nth-child(4), #channels-table td:nth-child(4) { width: auto; }
-        #channels-table th:nth-child(5), #channels-table td:nth-child(5) { width: 80px; }
-        #channels-table th:nth-child(6), #channels-table td:nth-child(6) { width: 80px; }
-        #channels-table th:nth-child(7), #channels-table td:nth-child(7) { width: 200px; text-align: right; }
+        #channels-table th:nth-child(5), #channels-table td:nth-child(5) { width: 70px; min-width: 70px; }
+        #channels-table th:nth-child(6), #channels-table td:nth-child(6) { width: 70px; min-width: 70px; }
+        #channels-table th:nth-child(7), #channels-table td:nth-child(7) { width: 180px; min-width: 180px; }
+
+        /* Prices table column widths */
+        #prices-table th:nth-child(1), #prices-table td:nth-child(1) { width: 50px; min-width: 50px; }
+        #prices-table th:nth-child(2), #prices-table td:nth-child(2) { width: 140px; min-width: 140px; }
+        #prices-table th:nth-child(3), #prices-table td:nth-child(3) { width: 100px; min-width: 100px; }
+        #prices-table th:nth-child(4), #prices-table td:nth-child(4) { width: 100px; min-width: 100px; }
+        #prices-table th:nth-child(5), #prices-table td:nth-child(5) { width: 70px; min-width: 70px; }
+        #prices-table th:nth-child(6), #prices-table td:nth-child(6) { width: 180px; min-width: 180px; }
 
         /* Model tags container */
         .model-tags {
             display: flex;
             flex-wrap: wrap;
             gap: 4px;
-            max-width: 400px;
         }
         .model-tag {
             font-family: 'JetBrains Mono';
@@ -1145,28 +1152,23 @@ def get_admin_html() -> str:
             padding: 2px 8px;
             border-radius: 4px;
             white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 150px;
         }
-
-        /* Prices table column widths */
-        #prices-table th:nth-child(1), #prices-table td:nth-child(1) { width: 60px; }
-        #prices-table th:nth-child(2), #prices-table td:nth-child(2) { width: 180px; }
-        #prices-table th:nth-child(3), #prices-table td:nth-child(3) { width: 120px; }
-        #prices-table th:nth-child(4), #prices-table td:nth-child(4) { width: 120px; }
-        #prices-table th:nth-child(5), #prices-table td:nth-child(5) { width: 80px; }
-        #prices-table th:nth-child(6), #prices-table td:nth-child(6) { width: 200px; text-align: right; }
 
         /* Action buttons container */
         .action-btns {
             display: flex;
+            flex-direction: row;
             justify-content: flex-end;
-            gap: 8px;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: nowrap;
+            white-space: nowrap;
         }
         .action-btns .btn {
-            padding: 4px 12px;
+            padding: 6px 12px;
             font-size: 12px;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
 
         .empty-state {

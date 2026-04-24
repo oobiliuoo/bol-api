@@ -240,7 +240,7 @@ async def get_all_model_prices(session: AsyncSession) -> List[ModelPrice]:
 
 async def get_model_price(session: AsyncSession, model: str) -> Optional[ModelPrice]:
     """获取特定模型的价格配置"""
-    result = await session.execute(select(ModelPrice).where(ModelPrice.model == model))
+    result = await session.execute(select(ModelPrice).where(ModelPrice.model == model, ModelPrice.is_active == True))
     return result.scalar_one_or_none()
 
 
