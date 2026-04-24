@@ -42,7 +42,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
     try:
         if stream:
             return StreamingResponse(
-                stream_chat_response(provider, body, channel, api_key_id, request, db),
+                stream_chat_response(provider, body, channel, api_key_id, request),
                 media_type="text/event-stream"
             )
         else:
@@ -82,7 +82,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def stream_chat_response(provider, body, channel, api_key_id, request, db):
+async def stream_chat_response(provider, body, channel, api_key_id, request):
     """流式响应处理"""
     start_time = time.time()
     total_content = ""
@@ -105,17 +105,20 @@ async def stream_chat_response(provider, body, channel, api_key_id, request, db)
         latency_ms = int((time.time() - start_time) * 1000)
         # 流式响应没有准确的token计数，用内容长度估算
         estimated_tokens = len(total_content) // 4
-        cost = await calculate_cost(db, model, 0, estimated_tokens)
-        await UsageRecorder.record(
-            api_key_id=api_key_id,
-            channel_id=channel.id,
-            provider=channel.provider_type,
-            model=model,
-            endpoint="/v1/chat/completions",
-            response_tokens=estimated_tokens,
-            cost=cost,
-            latency_ms=latency_ms
-        )
+
+        # 在流结束后使用新的session记录用量
+        async with async_session() as db:
+            cost = await calculate_cost(db, model, 0, estimated_tokens)
+            await UsageRecorder.record(
+                api_key_id=api_key_id,
+                channel_id=channel.id,
+                provider=channel.provider_type,
+                model=model,
+                endpoint="/v1/chat/completions",
+                response_tokens=estimated_tokens,
+                cost=cost,
+                latency_ms=latency_ms
+            )
 
     except Exception as e:
         yield f"data: {{'error': '{str(e)}'}}\n"
@@ -146,7 +149,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
     try:
         if stream:
             return StreamingResponse(
-                stream_anthropic_response(provider, body, channel, api_key_id, request, db),
+                stream_anthropic_response(provider, body, channel, api_key_id, request),
                 media_type="text/event-stream"
             )
         else:
@@ -183,7 +186,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def stream_anthropic_response(provider, body, channel, api_key_id, request, db):
+async def stream_anthropic_response(provider, body, channel, api_key_id, request):
     """Anthropic流式响应处理"""
     start_time = time.time()
     total_content = ""
@@ -194,9 +197,12 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
     try:
         async for line in provider.stream_chat_completion(body):
             yield f"{line}\n"
-            if line.startswith("data: "):
+            # 兼容两种格式: "data: {...}" 和 "data:{...}"
+            if line.startswith("data:"):
                 try:
-                    data = json.loads(line[6:])
+                    # 跳过"data:"或"data: "
+                    json_str = line[5:] if line[5] == '{' else line[6:]
+                    data = json.loads(json_str)
                     if data.get("type") == "content_block_delta":
                         delta = data.get("delta", {})
                         text = delta.get("text", "")
@@ -205,26 +211,36 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
                         usage = data.get("message", {}).get("usage", {})
                         input_tokens = usage.get("input_tokens", 0)
                     elif data.get("type") == "message_delta":
+                        # message_delta可能包含完整的usage信息（某些上游服务商）
                         usage = data.get("usage", {})
-                        output_tokens = usage.get("output_tokens", 0)
+                        if usage:
+                            input_tokens = usage.get("input_tokens", input_tokens)
+                            output_tokens = usage.get("output_tokens", 0)
+                        # 也尝试从delta中获取（标准Anthropic格式）
+                        delta_usage = data.get("delta", {}).get("usage", {})
+                        if delta_usage:
+                            output_tokens = delta_usage.get("output_tokens", 0)
                 except:
                     pass
 
         latency_ms = int((time.time() - start_time) * 1000)
         if output_tokens == 0:
             output_tokens = len(total_content) // 4
-        cost = await calculate_cost(db, model, input_tokens, output_tokens)
-        await UsageRecorder.record(
-            api_key_id=api_key_id,
-            channel_id=channel.id,
-            provider=channel.provider_type,
-            model=model,
-            endpoint="/v1/messages",
-            request_tokens=input_tokens,
-            response_tokens=output_tokens,
-            cost=cost,
-            latency_ms=latency_ms
-        )
+
+        # 在流结束后使用新的session记录用量
+        async with async_session() as db:
+            cost = await calculate_cost(db, model, input_tokens, output_tokens)
+            await UsageRecorder.record(
+                api_key_id=api_key_id,
+                channel_id=channel.id,
+                provider=channel.provider_type,
+                model=model,
+                endpoint="/v1/messages",
+                request_tokens=input_tokens,
+                response_tokens=output_tokens,
+                cost=cost,
+                latency_ms=latency_ms
+            )
 
     except Exception as e:
         yield f"event: error\ndata: {{'error': '{str(e)}'}}\n"
