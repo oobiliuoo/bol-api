@@ -3,7 +3,7 @@ import hashlib
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import APIKey, Channel, UsageLog, ModelPrice
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from app.utils.encryption import encrypt_key, decrypt_key, is_encrypted
 
@@ -169,7 +169,7 @@ async def get_usage_logs(session: AsyncSession, api_key_id: Optional[int] = None
 async def get_usage_summary(session: AsyncSession, api_key_id: Optional[int] = None,
                            days: int = 7) -> dict:
     """获取用量统计摘要（使用 SQL 聚合）"""
-    start_time = datetime.utcnow() - timedelta(days=days)
+    start_time = datetime.now(timezone.utc) - timedelta(days=days)
 
     # 使用 SQL 聚合函数
     query = select(
@@ -200,7 +200,7 @@ async def get_usage_summary(session: AsyncSession, api_key_id: Optional[int] = N
 
 async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
     """获取按模型分组的统计数据（使用 SQL 聚合）"""
-    start_time = datetime.utcnow() - timedelta(hours=hours)
+    start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     # 使用 SQL GROUP BY 聚合
     query = select(

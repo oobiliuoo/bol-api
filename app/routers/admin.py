@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.database import async_session
+from app.db.database import get_db
 from app.db.crud import (
     create_channel, get_all_channels, update_channel, delete_channel, toggle_channel,
     create_model_price, get_all_model_prices, update_model_price, delete_model_price,
@@ -13,11 +13,6 @@ from app.auth.jwt import create_token, verify_token
 import os
 
 router = APIRouter(tags=["Admin"])
-
-
-async def get_db():
-    async with async_session() as session:
-        yield session
 
 
 def get_admin_verifier():

@@ -4,7 +4,7 @@ import httpx
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.database import async_session
+from app.db.database import get_db, async_session
 from app.channels.manager import ChannelManager, create_provider
 from app.stats.recorder import UsageRecorder, calculate_cost
 from app.providers.openai import OpenAIProvider
@@ -14,11 +14,6 @@ router = APIRouter()
 
 # 最大重试次数（尝试不同渠道）
 MAX_FALLBACK_ATTEMPTS = 3
-
-
-async def get_db():
-    async with async_session() as session:
-        yield session
 
 
 @router.post("/v1/chat/completions")

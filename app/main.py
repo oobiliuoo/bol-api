@@ -52,11 +52,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS配置
+# CORS配置 - 注意：allow_origins=["*"] 和 allow_credentials=True 不能同时使用
+# 生产环境应配置具体的 allow_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["*"],  # 生产环境应限制为具体域名
+    allow_credentials=False,  # 与 allow_origins=["*"] 配合必须为 False
     allow_methods=["*"],
     allow_headers=["*"],
 )

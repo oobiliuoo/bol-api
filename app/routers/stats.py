@@ -1,18 +1,13 @@
 from fastapi import APIRouter, Depends, Query, Request, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timedelta
-from app.db.database import async_session
+from datetime import datetime, timedelta, timezone
+from app.db.database import get_db
 from app.db.crud import get_usage_logs, get_usage_summary, get_model_stats
 from app.stats.models import UsageLogResponse, UsageSummaryResponse, ModelStatsResponse
 from app.config import settings
 from app.auth.jwt import verify_token
 
 router = APIRouter(prefix="/stats", tags=["Usage Stats"])
-
-
-async def get_db():
-    async with async_session() as session:
-        yield session
 
 
 def verify_admin(request: Request):
@@ -41,7 +36,7 @@ async def get_logs(
     _: bool = Depends(verify_admin)
 ):
     """获取用量日志"""
-    start_time = datetime.utcnow() - timedelta(days=days)
+    start_time = datetime.now(timezone.utc) - timedelta(days=days)
     logs = await get_usage_logs(db, api_key_id, start_time, None, limit)
     return [
         UsageLogResponse(

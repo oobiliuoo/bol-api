@@ -1,4 +1,5 @@
 import os
+from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import text
@@ -35,6 +36,7 @@ async def init_db():
                 pass  # 索引可能已存在
 
 
-async def get_session() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """公共数据库会话依赖，用于 FastAPI Depends"""
     async with async_session() as session:
-        return session
+        yield session

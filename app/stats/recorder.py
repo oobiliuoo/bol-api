@@ -1,9 +1,12 @@
 import asyncio
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import async_session
 from app.db.crud import create_usage_log, get_model_price
+
+logger = logging.getLogger(__name__)
 
 
 class UsageRecorder:
@@ -35,7 +38,7 @@ class UsageRecorder:
             "cost": cost,
             "status_code": status_code,
             "latency_ms": latency_ms,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
         })
 
     @classmethod
@@ -52,7 +55,7 @@ class UsageRecorder:
             except asyncio.TimeoutError:
                 continue
             except Exception as e:
-                print(f"Error recording usage: {e}")
+                logger.error(f"Error recording usage: {e}")
 
 
 async def calculate_cost(session: AsyncSession, model: str, request_tokens: int, response_tokens: int) -> float:

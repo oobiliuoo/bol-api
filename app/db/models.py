@@ -1,7 +1,12 @@
 from sqlalchemy import Column, Integer, String, Boolean, Float, JSON, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from app.db.database import Base
+
+
+def utcnow():
+    """返回带 timezone 的当前 UTC 时间"""
+    return datetime.now(timezone.utc)
 
 
 class APIKey(Base):
@@ -13,7 +18,7 @@ class APIKey(Base):
     key_prefix = Column(String(12), nullable=True)  # key前缀用于显示（如 "sk-abc..."）
     name = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     rate_limit = Column(Integer, nullable=True)  # 每分钟请求限制
 
     usage_logs = relationship("UsageLog", back_populates="api_key")
@@ -44,8 +49,8 @@ class ModelPrice(Base):
     input_price = Column(Float, default=0.0)   # 输入价格 $/M (每百万token)
     output_price = Column(Float, default=0.0)  # 输出价格 $/M
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class UsageLog(Base):
@@ -59,7 +64,7 @@ class UsageLog(Base):
     request_tokens = Column(Integer, default=0)
     response_tokens = Column(Integer, default=0)
     cost = Column(Float, default=0.0)
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=utcnow, index=True)
     endpoint = Column(String(100), nullable=False)
     status_code = Column(Integer, default=200)
     latency_ms = Column(Integer, default=0)

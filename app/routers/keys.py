@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.database import async_session
+from app.db.database import get_db
 from app.db.crud import create_api_key, get_all_api_keys, delete_api_key, toggle_api_key, get_api_key_by_id
 from app.auth.models import APIKeyCreate, APIKeyResponse, APIKeyList, APIKeyReveal
 from app.config import settings
@@ -8,11 +8,6 @@ from app.auth.jwt import verify_token
 from app.utils.encryption import decrypt_key, is_encrypted
 
 router = APIRouter(prefix="/admin/keys", tags=["API Keys"])
-
-
-async def get_db():
-    async with async_session() as session:
-        yield session
 
 
 def verify_admin(request: Request):
