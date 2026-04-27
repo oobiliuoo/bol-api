@@ -52,10 +52,10 @@ class UsageLog(Base):
     __tablename__ = "usage_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    api_key_id = Column(Integer, ForeignKey("api_keys.id"), nullable=True)
-    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)
+    api_key_id = Column(Integer, ForeignKey("api_keys.id"), nullable=True, index=True)
+    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True, index=True)
     provider = Column(String(20), nullable=False)
-    model = Column(String(50), nullable=False)
+    model = Column(String(50), nullable=False, index=True)  # 添加索引，按模型统计常用
     request_tokens = Column(Integer, default=0)
     response_tokens = Column(Integer, default=0)
     cost = Column(Float, default=0.0)

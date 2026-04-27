@@ -1,6 +1,6 @@
 import secrets
 import hashlib
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import APIKey, Channel, UsageLog, ModelPrice
 from datetime import datetime, timedelta
@@ -64,6 +64,7 @@ async def toggle_api_key(session: AsyncSession, key_id: int, is_active: bool) ->
 async def create_channel(session: AsyncSession, name: str, provider_type: str, base_url: str,
                          api_key: str, models: List[str], priority: int = 1, weight: float = 1.0,
                          api_protocol: str = "openai") -> Channel:
+    from app.channels.manager import ChannelCache
     channel = Channel(
         name=name,
         provider_type=provider_type,
@@ -77,6 +78,7 @@ async def create_channel(session: AsyncSession, name: str, provider_type: str, b
     session.add(channel)
     await session.commit()
     await session.refresh(channel)
+    ChannelCache.invalidate()  # 使缓存失效
     return channel
 
 
@@ -102,6 +104,7 @@ CHANNEL_UPDATE_FIELDS = {"name", "api_protocol", "base_url", "api_key", "models"
 
 
 async def update_channel(session: AsyncSession, channel_id: int, **kwargs) -> Optional[Channel]:
+    from app.channels.manager import ChannelCache
     result = await session.execute(select(Channel).where(Channel.id == channel_id))
     channel = result.scalar_one_or_none()
     if channel:
@@ -111,28 +114,33 @@ async def update_channel(session: AsyncSession, channel_id: int, **kwargs) -> Op
                 setattr(channel, key, value)
         await session.commit()
         await session.refresh(channel)
+        ChannelCache.invalidate()  # 使缓存失效
         return channel
     return None
 
 
 async def toggle_channel(session: AsyncSession, channel_id: int, is_active: bool) -> Optional[Channel]:
     """切换渠道启用/禁用状态"""
+    from app.channels.manager import ChannelCache
     result = await session.execute(select(Channel).where(Channel.id == channel_id))
     channel = result.scalar_one_or_none()
     if channel:
         channel.is_active = is_active
         await session.commit()
         await session.refresh(channel)
+        ChannelCache.invalidate()  # 使缓存失效
         return channel
     return None
 
 
 async def delete_channel(session: AsyncSession, channel_id: int) -> bool:
+    from app.channels.manager import ChannelCache
     result = await session.execute(select(Channel).where(Channel.id == channel_id))
     channel = result.scalar_one_or_none()
     if channel:
         await session.delete(channel)
         await session.commit()
+        ChannelCache.invalidate()  # 使缓存失效
         return True
     return False
 
@@ -160,55 +168,77 @@ async def get_usage_logs(session: AsyncSession, api_key_id: Optional[int] = None
 
 async def get_usage_summary(session: AsyncSession, api_key_id: Optional[int] = None,
                            days: int = 7) -> dict:
+    """获取用量统计摘要（使用 SQL 聚合）"""
     start_time = datetime.utcnow() - timedelta(days=days)
-    query = select(UsageLog).where(UsageLog.timestamp >= start_time)
+
+    # 使用 SQL 聚合函数
+    query = select(
+        func.count().label('total_requests'),
+        func.sum(UsageLog.request_tokens).label('total_request_tokens'),
+        func.sum(UsageLog.response_tokens).label('total_response_tokens'),
+        func.sum(UsageLog.cost).label('total_cost')
+    ).where(UsageLog.timestamp >= start_time)
+
     if api_key_id:
         query = query.where(UsageLog.api_key_id == api_key_id)
-    result = await session.execute(query)
-    logs = result.scalars().all()
 
-    total_requests = len(logs)
-    total_request_tokens = sum(log.request_tokens for log in logs)
-    total_response_tokens = sum(log.response_tokens for log in logs)
-    total_cost = sum(log.cost for log in logs)
+    result = await session.execute(query)
+    row = result.one()
+
+    total_request_tokens = row.total_request_tokens or 0
+    total_response_tokens = row.total_response_tokens or 0
 
     return {
-        "total_requests": total_requests,
+        "total_requests": row.total_requests or 0,
         "total_request_tokens": total_request_tokens,
         "total_response_tokens": total_response_tokens,
         "total_tokens": total_request_tokens + total_response_tokens,
-        "total_cost": total_cost,
+        "total_cost": row.total_cost or 0.0,
         "days": days
     }
 
 
 async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
-    """获取按模型分组的统计数据，支持小时级别"""
-    from datetime import timedelta
+    """获取按模型分组的统计数据（使用 SQL 聚合）"""
     start_time = datetime.utcnow() - timedelta(hours=hours)
-    query = select(UsageLog).where(UsageLog.timestamp >= start_time)
-    result = await session.execute(query)
-    logs = result.scalars().all()
 
-    # 按模型分组统计
-    model_stats = {}
-    for log in logs:
-        model = log.model
-        if model not in model_stats:
-            model_stats[model] = {
-                "model": model,
-                "requests": 0,
-                "request_tokens": 0,
-                "response_tokens": 0,
-                "cost": 0.0,
-            }
-        model_stats[model]["requests"] += 1
-        model_stats[model]["request_tokens"] += log.request_tokens
-        model_stats[model]["response_tokens"] += log.response_tokens
-        model_stats[model]["cost"] += log.cost
+    # 使用 SQL GROUP BY 聚合
+    query = select(
+        UsageLog.model,
+        func.count().label('requests'),
+        func.sum(UsageLog.request_tokens).label('request_tokens'),
+        func.sum(UsageLog.response_tokens).label('response_tokens'),
+        func.sum(UsageLog.cost).label('cost')
+    ).where(UsageLog.timestamp >= start_time).group_by(UsageLog.model)
+
+    result = await session.execute(query)
+    rows = result.all()
+
+    # 转换为字典列表并按请求次数排序
+    model_stats = []
+    total_requests = 0
+    total_tokens = 0
+    total_cost = 0.0
+
+    for row in rows:
+        req_tokens = row.request_tokens or 0
+        resp_tokens = row.response_tokens or 0
+        cost = row.cost or 0.0
+
+        model_stats.append({
+            "model": row.model,
+            "requests": row.requests,
+            "request_tokens": req_tokens,
+            "response_tokens": resp_tokens,
+            "cost": cost,
+        })
+
+        total_requests += row.requests
+        total_tokens += req_tokens + resp_tokens
+        total_cost += cost
 
     # 按请求次数排序
-    sorted_stats = sorted(model_stats.values(), key=lambda x: x["requests"], reverse=True)
+    model_stats.sort(key=lambda x: x["requests"], reverse=True)
 
     # 计算days/hours显示
     if hours < 24:
@@ -217,10 +247,10 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
         period_label = f"{hours // 24}d"
 
     return {
-        "stats": sorted_stats,
-        "total_requests": len(logs),
-        "total_tokens": sum(log.request_tokens + log.response_tokens for log in logs),
-        "total_cost": sum(log.cost for log in logs),
+        "stats": model_stats,
+        "total_requests": total_requests,
+        "total_tokens": total_tokens,
+        "total_cost": total_cost,
         "period": period_label,
         "hours": hours
     }

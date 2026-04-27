@@ -1,4 +1,5 @@
 import random
+import time
 from typing import Optional, List, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.crud import get_active_channels, get_channel_by_id
@@ -7,6 +8,42 @@ from app.providers.base import BaseProvider
 from app.providers.openai import OpenAIProvider
 from app.providers.anthropic import AnthropicProvider
 from app.providers.custom import CustomProvider
+
+
+class ChannelCache:
+    """渠道列表缓存（带 TTL）"""
+    _instance = None
+    _channels: List[Channel] = []
+    _cache_time: float = 0
+    _ttl: int = 60  # 缓存有效期（秒）
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    def get(cls) -> Tuple[Optional[List[Channel]], float]:
+        """获取缓存和缓存时间"""
+        instance = cls.get_instance()
+        if instance._channels and (time.time() - instance._cache_time) < instance._ttl:
+            return instance._channels, instance._cache_time
+        return None, 0
+
+    @classmethod
+    def set(cls, channels: List[Channel]):
+        """设置缓存"""
+        instance = cls.get_instance()
+        instance._channels = channels
+        instance._cache_time = time.time()
+
+    @classmethod
+    def invalidate(cls):
+        """使缓存失效"""
+        instance = cls.get_instance()
+        instance._channels = []
+        instance._cache_time = 0
 
 
 def create_provider(channel: Channel) -> BaseProvider:
@@ -34,6 +71,17 @@ def create_provider(channel: Channel) -> BaseProvider:
 
 class ChannelManager:
     """渠道管理器，负责选择合适的渠道并实现调度策略"""
+
+    @staticmethod
+    async def _get_cached_channels(session: AsyncSession) -> List[Channel]:
+        """获取活跃渠道（优先使用缓存）"""
+        cached, _ = ChannelCache.get()
+        if cached is not None:
+            return cached
+
+        channels = await get_active_channels(session)
+        ChannelCache.set(channels)
+        return channels
 
     @staticmethod
     def _match_model(channel: Channel, model: str) -> bool:
@@ -81,7 +129,7 @@ class ChannelManager:
         4. 在最高优先级组内按权重随机选择
         """
         exclude_ids = exclude_ids or []
-        channels = await get_active_channels(session)
+        channels = await ChannelManager._get_cached_channels(session)
 
         # 筛选支持该模型且未被排除的渠道
         matching_channels = [
@@ -113,7 +161,7 @@ class ChannelManager:
 
         返回按优先级降序排列的渠道列表
         """
-        channels = await get_active_channels(session)
+        channels = await ChannelManager._get_cached_channels(session)
         matching_channels = [c for c in channels if ChannelManager._match_model(c, model)]
         # 按优先级降序排序
         matching_channels.sort(key=lambda c: c.priority, reverse=True)
