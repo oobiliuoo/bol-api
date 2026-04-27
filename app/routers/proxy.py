@@ -133,6 +133,8 @@ async def stream_chat_response(provider, body, channel, api_key_id, request, fai
     start_time = time.time()
     total_content = ""
     model = body.get("model")
+    prompt_tokens = 0
+    completion_tokens = 0
 
     try:
         async for line in provider.stream_chat_completion(body):
@@ -147,30 +149,52 @@ async def stream_chat_response(provider, body, channel, api_key_id, request, fai
                         delta = data["choices"][0].get("delta", {})
                         content = delta.get("content", "")
                         total_content += content
-                except:
-                    pass
+                    # 检查是否有 usage 信息（OpenAI stream_options.include_usage）
+                    if data.get("usage"):
+                        usage = data["usage"]
+                        prompt_tokens = usage.get("prompt_tokens", 0)
+                        completion_tokens = usage.get("completion_tokens", 0)
+                except json.JSONDecodeError:
+                    pass  # JSON解析失败，跳过此行
 
-        # 流式完成后记录用量（估算）
+        # 流式完成后记录用量
         latency_ms = int((time.time() - start_time) * 1000)
-        # 流式响应没有准确的token计数，用内容长度估算
-        estimated_tokens = len(total_content) // 4
+
+        # 如果没有从 usage 中获取到 token 数，用内容长度估算
+        if completion_tokens == 0:
+            completion_tokens = len(total_content) // 4
 
         # 在流结束后使用新的session记录用量
         async with async_session() as db:
-            cost = await calculate_cost(db, model, 0, estimated_tokens)
+            cost = await calculate_cost(db, model, prompt_tokens, completion_tokens)
             await UsageRecorder.record(
                 api_key_id=api_key_id,
                 channel_id=channel.id,
                 provider=channel.provider_type,
                 model=model,
                 endpoint="/v1/chat/completions",
-                response_tokens=estimated_tokens,
+                request_tokens=prompt_tokens,
+                response_tokens=completion_tokens,
                 cost=cost,
                 latency_ms=latency_ms
             )
 
     except Exception as e:
         error_msg = str(e)
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        # 记录失败请求
+        async with async_session() as db:
+            await UsageRecorder.record(
+                api_key_id=api_key_id,
+                channel_id=channel.id,
+                provider=channel.provider_type,
+                model=model,
+                endpoint="/v1/chat/completions",
+                status_code=500,
+                latency_ms=latency_ms
+            )
+
         # 发送标准OpenAI格式的错误事件
         error_data = {"error": {"message": error_msg, "type": "internal_error"}}
         yield f"data: {json.dumps(error_data)}\n\n"
@@ -297,8 +321,13 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
             # 兼容两种格式: "data: {...}" 和 "data:{...}"
             if line.startswith("data:"):
                 try:
-                    # 跳过"data:"或"data: "
-                    json_str = line[5:] if line[5] == '{' else line[6:]
+                    # 跳过"data:"或"data: "，添加长度检查防止越界
+                    if len(line) > 5 and line[5] == '{':
+                        json_str = line[5:]
+                    elif len(line) > 6:
+                        json_str = line[6:]
+                    else:
+                        continue  # 行太短，跳过
                     data = json.loads(json_str)
                     if data.get("type") == "content_block_delta":
                         delta = data.get("delta", {})
@@ -317,8 +346,8 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
                         delta_usage = data.get("delta", {}).get("usage", {})
                         if delta_usage:
                             output_tokens = delta_usage.get("output_tokens", 0)
-                except:
-                    pass
+                except json.JSONDecodeError:
+                    pass  # JSON解析失败，跳过此行
 
         latency_ms = int((time.time() - start_time) * 1000)
         if output_tokens == 0:
@@ -341,6 +370,20 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
 
     except Exception as e:
         error_msg = str(e)
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        # 记录失败请求
+        async with async_session() as db:
+            await UsageRecorder.record(
+                api_key_id=api_key_id,
+                channel_id=channel.id,
+                provider=channel.provider_type,
+                model=model,
+                endpoint="/v1/messages",
+                status_code=500,
+                latency_ms=latency_ms
+            )
+
         # 发送标准Anthropic格式的错误事件
         error_data = {
             "type": "error",

@@ -33,8 +33,14 @@ async def lifespan(app: FastAPI):
         )
 
     yield
+
     # 关闭时清理
     task.cancel()
+    try:
+        await task  # 等待任务真正取消
+    except asyncio.CancelledError:
+        pass  # 任务被取消是预期行为
+
     from app.utils.http_client import AsyncHttpClient
     await AsyncHttpClient.close()
 

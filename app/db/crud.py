@@ -97,12 +97,18 @@ async def get_channel_by_id(session: AsyncSession, channel_id: int) -> Optional[
     return result.scalar_one_or_none()
 
 
+# 渠道可更新字段白名单
+CHANNEL_UPDATE_FIELDS = {"name", "api_protocol", "base_url", "api_key", "models", "is_active", "priority", "weight"}
+
+
 async def update_channel(session: AsyncSession, channel_id: int, **kwargs) -> Optional[Channel]:
     result = await session.execute(select(Channel).where(Channel.id == channel_id))
     channel = result.scalar_one_or_none()
     if channel:
+        # 只更新白名单中的字段
         for key, value in kwargs.items():
-            setattr(channel, key, value)
+            if key in CHANNEL_UPDATE_FIELDS:
+                setattr(channel, key, value)
         await session.commit()
         await session.refresh(channel)
         return channel
@@ -252,13 +258,19 @@ async def get_model_price_by_id(session: AsyncSession, price_id: int) -> Optiona
     return result.scalar_one_or_none()
 
 
+# 模型价格可更新字段白名单
+MODEL_PRICE_UPDATE_FIELDS = {"model", "input_price", "output_price", "is_active"}
+
+
 async def update_model_price(session: AsyncSession, price_id: int, **kwargs) -> Optional[ModelPrice]:
     """更新模型价格配置"""
     result = await session.execute(select(ModelPrice).where(ModelPrice.id == price_id))
     price = result.scalar_one_or_none()
     if price:
+        # 只更新白名单中的字段
         for key, value in kwargs.items():
-            setattr(price, key, value)
+            if key in MODEL_PRICE_UPDATE_FIELDS:
+                setattr(price, key, value)
         await session.commit()
         await session.refresh(price)
         return price
