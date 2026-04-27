@@ -581,69 +581,113 @@ async function loadModelStats(hours) {
     const totalOutputTokens = data.stats ? data.stats.reduce((sum, s) => sum + s.response_tokens, 0) : 0;
 
     if (data.stats && data.stats.length > 0) {
+        // 颜色数组用于图表
+        const colors = [
+            '#00d9ff', '#7b61ff', '#ff00aa', '#ff8c00', '#00ff88',
+            '#ff3355', '#00aa88', '#aa00ff', '#88ff00', '#ff0088'
+        ];
+
         container.innerHTML = `
-            <div style="padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--bg-elevated);">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div style="display: flex; gap: 20px;">
-                        <div>
-                            <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">总请求</span>
-                            <span style="font-family: 'JetBrains Mono'; font-size: 18px; font-weight: 600; color: var(--text-bright); margin-left: 8px;">${data.total_requests}</span>
-                        </div>
-                        <div>
-                            <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">输入Tokens</span>
-                            <span style="font-family: 'JetBrains Mono'; font-size: 18px; font-weight: 600; color: var(--accent); margin-left: 8px;">${formatNumber(totalInputTokens)}</span>
-                        </div>
-                        <div>
-                            <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">输出Tokens</span>
-                            <span style="font-family: 'JetBrains Mono'; font-size: 18px; font-weight: 600; color: var(--accent-secondary); margin-left: 8px;">${formatNumber(totalOutputTokens)}</span>
-                        </div>
+            <!-- 汇总统计卡片 -->
+            <div class="model-summary-grid">
+                <div class="model-summary-card">
+                    <div class="summary-icon">📊</div>
+                    <div class="summary-content">
+                        <div class="summary-value">${data.total_requests}</div>
+                        <div class="summary-label">总请求</div>
                     </div>
-                    <div>
-                        <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">总费用</span>
-                        <span style="font-family: 'JetBrains Mono'; font-size: 18px; font-weight: 600; color: var(--success); margin-left: 8px;">$${data.total_cost.toFixed(4)}</span>
+                </div>
+                <div class="model-summary-card">
+                    <div class="summary-icon" style="color: var(--accent-primary);">↓</div>
+                    <div class="summary-content">
+                        <div class="summary-value">${formatNumber(totalInputTokens)}</div>
+                        <div class="summary-label">输入 Tokens</div>
+                    </div>
+                </div>
+                <div class="model-summary-card">
+                    <div class="summary-icon" style="color: var(--accent-secondary);">↑</div>
+                    <div class="summary-content">
+                        <div class="summary-value">${formatNumber(totalOutputTokens)}</div>
+                        <div class="summary-label">输出 Tokens</div>
+                    </div>
+                </div>
+                <div class="model-summary-card">
+                    <div class="summary-icon" style="color: var(--accent-success);">$</div>
+                    <div class="summary-content">
+                        <div class="summary-value">${data.total_cost.toFixed(4)}</div>
+                        <div class="summary-label">总费用</div>
                     </div>
                 </div>
             </div>
-            ${data.stats.map((s, i) => {
-                const percentage = Math.round((s.requests / maxRequests) * 100);
-                const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
-                return `
-                    <div class="model-row">
-                        <div class="model-rank">
-                            <span class="rank-badge ${rankClass}">${i + 1}</span>
-                        </div>
-                        <div class="model-name">${s.model}</div>
-                        <div class="model-stats">
-                            <div class="model-stat-item">
-                                <span class="model-stat-label">请求</span>
-                                <span class="model-stat-value">${s.requests}</span>
+
+            <!-- 可视化图表 -->
+            <div class="model-chart-section">
+                <div class="chart-title">请求分布</div>
+                <div class="model-bar-chart">
+                    ${data.stats.slice(0, 10).map((s, i) => {
+                        const percentage = Math.round((s.requests / data.total_requests) * 100);
+                        const width = Math.max(percentage, 3);
+                        const color = colors[i % colors.length];
+                        return `
+                            <div class="chart-row">
+                                <div class="chart-label">${s.model}</div>
+                                <div class="chart-bar-wrapper">
+                                    <div class="chart-bar" style="width: ${width}%; background: ${color};">
+                                        <span class="chart-bar-value">${percentage}%</span>
+                                    </div>
+                                </div>
+                                <div class="chart-count">${s.requests}</div>
                             </div>
-                            <div class="model-progress">
-                                <div class="model-progress-bar" style="width: ${percentage}%; background: linear-gradient(90deg, var(--accent), var(--accent-secondary));"></div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+
+            <!-- 详细数据表格 -->
+            <div class="model-detail-section">
+                <div class="detail-title">详细数据</div>
+                <div class="model-detail-grid">
+                    ${data.stats.map((s, i) => {
+                        const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-default';
+                        const color = colors[i % colors.length];
+                        const percentage = Math.round((s.requests / data.total_requests) * 100);
+                        return `
+                            <div class="model-detail-card">
+                                <div class="detail-header">
+                                    <span class="detail-rank ${rankClass}">#${i + 1}</span>
+                                    <span class="detail-model">${s.model}</span>
+                                </div>
+                                <div class="detail-usage-bar" style="background: ${color}; width: ${percentage}%;"></div>
+                                <div class="detail-stats">
+                                    <div class="detail-stat">
+                                        <span class="detail-stat-label">请求</span>
+                                        <span class="detail-stat-value">${s.requests}</span>
+                                    </div>
+                                    <div class="detail-stat">
+                                        <span class="detail-stat-label">输入</span>
+                                        <span class="detail-stat-value" style="color: var(--accent-primary);">${formatNumber(s.request_tokens)}</span>
+                                    </div>
+                                    <div class="detail-stat">
+                                        <span class="detail-stat-label">输出</span>
+                                        <span class="detail-stat-value" style="color: var(--accent-secondary);">${formatNumber(s.response_tokens)}</span>
+                                    </div>
+                                    <div class="detail-stat">
+                                        <span class="detail-stat-label">费用</span>
+                                        <span class="detail-stat-value" style="color: var(--accent-success);">$${s.cost.toFixed(4)}</span>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="model-stat-item">
-                                <span class="model-stat-label">输入</span>
-                                <span class="model-stat-value" style="color: var(--accent);">${formatNumber(s.request_tokens)}</span>
-                            </div>
-                            <div class="model-stat-item">
-                                <span class="model-stat-label">输出</span>
-                                <span class="model-stat-value" style="color: var(--accent-secondary);">${formatNumber(s.response_tokens)}</span>
-                            </div>
-                            <div class="model-stat-item">
-                                <span class="model-stat-label">费用</span>
-                                <span class="model-stat-value" style="color: var(--success);">$${s.cost.toFixed(4)}</span>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('')}
+                        `;
+                    }).join('')}
+                </div>
+            </div>
         `;
     } else {
         container.innerHTML = `
-            <div style="text-align: center; color: var(--text-muted); padding: 60px 24px;">
-                <div style="font-size: 48px; opacity: 0.3; margin-bottom: 16px;">📭</div>
-                <div style="font-size: 14px;">近 ${data.period} 无请求记录</div>
-                <div style="font-size: 12px; margin-top: 8px; opacity: 0.6;">开始调用 API 后将显示统计数据</div>
+            <div class="model-empty-state">
+                <div class="empty-icon">📭</div>
+                <div class="empty-title">近 ${data.period} 无请求记录</div>
+                <div class="empty-desc">开始调用 API 后将显示统计数据</div>
             </div>
         `;
     }

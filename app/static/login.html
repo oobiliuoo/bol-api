@@ -3,26 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>bol-api // Login</title>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <title>bol-api // Authentication</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
+            /* Deep dark background */
+            --bg-void: #050810;
             --bg-deep: #0a0e14;
-            --bg-surface: #131820;
-            --bg-elevated: #1a222d;
-            --border: #2a3544;
-            --text: #c5d1de;
-            --text-muted: #6b7d8f;
-            --accent: #00d9ff;
-            --accent-glow: rgba(0, 217, 255, 0.15);
-            --error: #ff5f5f;
+            --bg-surface: #0f1419;
+            --bg-elevated: #151c24;
+
+            /* Borders */
+            --border: #1e2936;
+            --border-glow: #2a3544;
+
+            /* Text */
+            --text: #a8b8c8;
+            --text-muted: #5a7080;
+            --text-glow: #d0e4f0;
+
+            /* Neon accents */
+            --accent-primary: #00d9ff;
+            --accent-secondary: #7b61ff;
+            --accent-tertiary: #ff00aa;
+            --accent-error: #ff3355;
+            --accent-success: #00ff88;
+
+            /* Glow values */
+            --glow-primary: rgba(0, 217, 255, 0.4);
+            --glow-secondary: rgba(123, 97, 255, 0.4);
+            --glow-tertiary: rgba(255, 0, 170, 0.4);
+
+            /* Glass effect */
+            --glass-blur: 12px;
+            --glass-bg: rgba(15, 20, 25, 0.7);
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             font-family: 'Outfit', sans-serif;
-            background: var(--bg-deep);
+            background: var(--bg-void);
             color: var(--text);
             min-height: 100vh;
             display: flex;
@@ -32,190 +53,386 @@
             overflow: hidden;
         }
 
+        /* Animated grid background */
         body::before {
             content: '';
             position: absolute;
             inset: 0;
             background:
-                linear-gradient(90deg, var(--border) 1px, transparent 1px),
-                linear-gradient(var(--border) 1px, transparent 1px);
-            background-size: 60px 60px;
-            opacity: 0.3;
-            animation: gridMove 20s linear infinite;
+                linear-gradient(90deg, rgba(0, 217, 255, 0.04) 1px, transparent 1px),
+                linear-gradient(rgba(0, 217, 255, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            animation: gridPulse 8s ease-in-out infinite;
+            z-index: -2;
         }
 
-        @keyframes gridMove {
-            0% { transform: translate(0, 0); }
-            100% { transform: translate(60px, 60px); }
+        @keyframes gridPulse {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 0.7; }
         }
 
+        /* Ambient glow orbs */
+        body::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 60% 40% at 30% 30%, var(--glow-primary), transparent 50%),
+                radial-gradient(ellipse 50% 30% at 70% 70%, var(--glow-secondary), transparent 50%),
+                radial-gradient(ellipse 30% 20% at 50% 50%, var(--glow-tertiary), transparent 60%);
+            animation: ambientGlow 12s ease-in-out infinite alternate;
+            z-index: -1;
+            opacity: 0.2;
+        }
+
+        @keyframes ambientGlow {
+            0% { opacity: 0.15; transform: scale(1); }
+            100% { opacity: 0.25; transform: scale(1.1); }
+        }
+
+        /* Scanline effect */
+        .scanline-overlay {
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 0, 0, 0.03) 2px,
+                rgba(0, 0, 0, 0.03) 4px
+            );
+            pointer-events: none;
+            z-index: 9999;
+            animation: scanlineMove 10s linear infinite;
+        }
+
+        @keyframes scanlineMove {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(4px); }
+        }
+
+        /* Floating neon orbs */
         .glow-orb {
             position: absolute;
             border-radius: 50%;
-            filter: blur(80px);
-            opacity: 0.4;
-            animation: float 8s ease-in-out infinite;
+            filter: blur(100px);
+            animation: float 10s ease-in-out infinite;
         }
 
         .glow-orb-1 {
-            width: 300px; height: 300px;
-            background: var(--accent);
-            top: -100px; left: -100px;
+            width: 400px;
+            height: 400px;
+            background: var(--accent-primary);
+            top: -150px;
+            left: -150px;
+            opacity: 0.3;
         }
 
         .glow-orb-2 {
-            width: 200px; height: 200px;
-            background: #7b61ff;
-            bottom: -50px; right: -50px;
-            animation-delay: -4s;
+            width: 300px;
+            height: 300px;
+            background: var(--accent-secondary);
+            bottom: -100px;
+            right: -100px;
+            opacity: 0.25;
+            animation-delay: -5s;
+        }
+
+        .glow-orb-3 {
+            width: 200px;
+            height: 200px;
+            background: var(--accent-tertiary);
+            top: 50%;
+            right: 20%;
+            opacity: 0.15;
+            animation-delay: -3s;
         }
 
         @keyframes float {
             0%, 100% { transform: translate(0, 0) scale(1); }
-            50% { transform: translate(20px, -20px) scale(1.1); }
+            25% { transform: translate(30px, -20px) scale(1.1); }
+            50% { transform: translate(20px, 30px) scale(0.95); }
+            75% { transform: translate(-20px, 10px) scale(1.05); }
         }
 
+        /* Login container */
         .login-container {
             position: relative;
             z-index: 10;
-            animation: fadeInUp 0.6s ease-out;
+            animation: loginFadeIn 0.8s ease-out;
         }
 
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
+        @keyframes loginFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(40px) scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
         }
 
+        /* Login box - Glass cyber panel */
         .login-box {
-            background: var(--bg-surface);
-            border: 1px solid var(--border);
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            border: 1px solid var(--accent-primary);
             border-radius: 16px;
-            padding: 40px 48px;
-            width: 380px;
+            padding: 48px;
+            width: 420px;
             box-shadow:
-                0 0 0 1px var(--bg-elevated),
-                0 20px 50px -10px rgba(0, 0, 0, 0.5),
-                inset 0 1px 0 rgba(255,255,255,0.05);
+                0 0 30px var(--glow-primary),
+                0 20px 60px -10px rgba(0, 0, 0, 0.7);
+            position: relative;
+            overflow: hidden;
         }
 
+        /* Animated top bar */
+        .login-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary), var(--accent-tertiary), var(--accent-primary));
+            background-size: 300% 100%;
+            animation: topBarFlow 4s linear infinite;
+        }
+
+        @keyframes topBarFlow {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 300% 50%; }
+        }
+
+        /* Logo section */
         .logo {
             display: flex;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 32px;
+            gap: 16px;
+            margin-bottom: 40px;
         }
 
         .logo-icon {
-            width: 48px; height: 48px;
-            background: linear-gradient(135deg, var(--accent), #7b61ff);
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
             border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 700;
-            font-size: 20px;
-            color: var(--bg-deep);
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            font-size: 24px;
+            color: var(--bg-void);
+            box-shadow:
+                0 0 20px var(--glow-primary),
+                inset 0 0 15px rgba(255, 255, 255, 0.2);
+            animation: logoPulse 3s ease-in-out infinite;
+            position: relative;
+        }
+
+        @keyframes logoPulse {
+            0%, 100% {
+                box-shadow: 0 0 20px var(--glow-primary), inset 0 0 15px rgba(255, 255, 255, 0.2);
+            }
+            50% {
+                box-shadow: 0 0 30px var(--glow-primary), 0 0 10px var(--glow-secondary), inset 0 0 15px rgba(255, 255, 255, 0.3);
+            }
+        }
+
+        .logo-icon::after {
+            content: '';
+            position: absolute;
+            inset: -3px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 14px;
+            opacity: 0;
+            animation: logoRing 4s ease-in-out infinite;
+        }
+
+        @keyframes logoRing {
+            0%, 100% { opacity: 0; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(1.1); }
         }
 
         .logo-text {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 24px;
-            font-weight: 500;
-            color: var(--text);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 26px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: var(--text-glow);
+            text-shadow: 0 0 15px var(--glow-primary);
         }
 
         .logo-text span {
-            color: var(--accent);
+            color: var(--accent-primary);
+            text-shadow: 0 0 20px var(--glow-primary);
         }
 
+        /* Header text */
         h2 {
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--text-muted);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--accent-primary);
             text-transform: uppercase;
-            letter-spacing: 2px;
-            margin-bottom: 24px;
+            letter-spacing: 4px;
+            margin-bottom: 32px;
+            text-shadow: 0 0 10px var(--glow-primary);
         }
 
+        /* Input group */
         .input-group {
             position: relative;
-            margin-bottom: 20px;
+            margin-bottom: 24px;
         }
 
         .input-group label {
             display: block;
             font-size: 12px;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-            font-weight: 500;
+            font-weight: 700;
+            font-family: 'Orbitron', sans-serif;
+            color: var(--accent-primary);
+            margin-bottom: 10px;
+            letter-spacing: 2px;
         }
 
         .input-group input {
             width: 100%;
-            padding: 14px 16px;
+            padding: 14px 18px;
             background: var(--bg-elevated);
             border: 1px solid var(--border);
             border-radius: 8px;
-            color: var(--text);
+            color: var(--text-glow);
             font-family: 'JetBrains Mono', monospace;
             font-size: 14px;
-            transition: all 0.2s ease;
+            transition: all 0.3s ease;
             outline: none;
         }
 
         .input-group input:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-glow);
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 25px var(--glow-primary);
+            background: rgba(0, 217, 255, 0.05);
         }
 
         .input-group input::placeholder {
             color: var(--text-muted);
-            opacity: 0.5;
+            opacity: 0.6;
         }
 
+        /* Button */
         .btn {
             width: 100%;
-            padding: 14px 24px;
-            background: linear-gradient(135deg, var(--accent), #7b61ff);
-            border: none;
+            padding: 16px 24px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border: 1px solid var(--accent-primary);
             border-radius: 8px;
-            color: var(--bg-deep);
-            font-family: 'Outfit', sans-serif;
+            color: var(--bg-void);
+            font-family: 'Orbitron', sans-serif;
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.3s ease;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 3px;
+            box-shadow: 0 0 20px var(--glow-primary);
+            animation: btnPulse 2s ease-in-out infinite;
+            position: relative;
+            overflow: hidden;
+        }
+
+        @keyframes btnPulse {
+            0%, 100% { box-shadow: 0 0 20px var(--glow-primary); }
+            50% { box-shadow: 0 0 30px var(--glow-primary), 0 0 5px var(--glow-secondary); }
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transform: translateX(-100%);
+            animation: btnShine 3s ease-in-out infinite;
+        }
+
+        @keyframes btnShine {
+            0% { transform: translateX(-100%); }
+            50%, 100% { transform: translateX(100%); }
         }
 
         .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px -4px rgba(0, 217, 255, 0.4);
+            transform: translateY(-3px);
+            box-shadow: 0 0 40px var(--glow-primary), 0 0 15px var(--glow-secondary);
         }
 
         .btn:active {
-            transform: translateY(0);
+            transform: translateY(-1px);
         }
 
+        /* Error message */
         .error-msg {
-            color: var(--error);
+            color: var(--accent-error);
             font-size: 12px;
-            margin-top: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            margin-top: 20px;
             text-align: center;
             opacity: 0;
-            transition: opacity 0.2s;
+            transition: opacity 0.3s;
+            letter-spacing: 1px;
         }
 
         .error-msg.show {
             opacity: 1;
+            animation: errorFlash 0.5s ease;
+        }
+
+        @keyframes errorFlash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Terminal-style text decoration */
+        .terminal-text {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+            opacity: 0.5;
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .login-box {
+                padding: 32px 24px;
+                width: 90vw;
+                max-width: 360px;
+            }
+
+            .logo-text {
+                font-size: 20px;
+            }
+
+            .logo-icon {
+                width: 44px;
+                height: 44px;
+                font-size: 18px;
+            }
         }
     </style>
 </head>
 <body>
+    <div class="scanline-overlay"></div>
     <div class="glow-orb glow-orb-1"></div>
     <div class="glow-orb glow-orb-2"></div>
+    <div class="glow-orb glow-orb-3"></div>
 
     <div class="login-container">
         <div class="login-box">
@@ -224,17 +441,19 @@
                 <div class="logo-text">bol<span>-api</span></div>
             </div>
 
-            <h2>Admin Access</h2>
+            <h2>// Authentication Protocol</h2>
 
             <div class="input-group">
-                <label>Password</label>
+                <label>Access Key</label>
                 <input type="password" id="password" placeholder="Enter admin password" autofocus>
             </div>
 
-            <button class="btn" onclick="login()">Authenticate</button>
+            <button class="btn" onclick="login()">Initialize</button>
 
-            <div class="error-msg" id="error">Invalid credentials</div>
+            <div class="error-msg" id="error">⚠ ACCESS DENIED</div>
         </div>
+
+        <div class="terminal-text">SYSTEM v0.1.0 | SECURE CONNECTION</div>
     </div>
 
     <script>
