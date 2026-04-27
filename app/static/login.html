@@ -451,8 +451,9 @@
             });
 
             if (res.ok) {
-                localStorage.setItem('admin_password', password);
-                window.location.href = '/admin?password=' + password;
+                const data = await res.json();
+                localStorage.setItem('admin_token', data.token);
+                window.location.href = '/admin';
             } else {
                 errorMsg.classList.add('show');
                 setTimeout(() => errorMsg.classList.remove('show'), 2000);

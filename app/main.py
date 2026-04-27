@@ -1,4 +1,5 @@
 import asyncio
+import warnings
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +19,19 @@ async def lifespan(app: FastAPI):
     UsageRecorder.init()
     # 启动用量记录后台任务
     task = asyncio.create_task(UsageRecorder.process_queue())
+
+    # 安全检查：警告使用默认密钥
+    if settings.encryption_key == "default_encryption_key_32_bytes!":
+        warnings.warn(
+            "WARNING: Using default ENCRYPTION_KEY. Set a secure key in production!",
+            UserWarning
+        )
+    if settings.jwt_secret == "default_jwt_secret_change_in_production!":
+        warnings.warn(
+            "WARNING: Using default JWT_SECRET. Set a secure key in production!",
+            UserWarning
+        )
+
     yield
     # 关闭时清理
     task.cancel()

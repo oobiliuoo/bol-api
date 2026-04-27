@@ -1,7 +1,20 @@
 // bol-api Admin Interface JavaScript
 
-const password = localStorage.getItem('admin_password') || new URLSearchParams(window.location.search).get('password');
-const headers = {'X-Admin-Password': password, 'Content-Type': 'application/json'};
+const token = localStorage.getItem('admin_token');
+if (!token) {
+    window.location.href = '/admin/login';
+}
+const headers = {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'};
+
+// 处理 401 响应
+async function fetchWithAuth(url, options = {}) {
+    const res = await fetch(url, {...options, headers: {...headers, ...options.headers}});
+    if (res.status === 401) {
+        localStorage.removeItem('admin_token');
+        window.location.href = '/admin/login';
+    }
+    return res;
+}
 
 // Stats
 async function loadStats() {
@@ -571,7 +584,7 @@ async function loadModelStats(hours) {
 
     document.getElementById('model-stats-period').textContent = hours < 24 ? `${hours}时` : `${hours / 24}天`;
 
-    const res = await fetch(`/stats/models?hours=${hours}`);
+    const res = await fetch(`/stats/models?hours=${hours}`, {headers});
     const data = await res.json();
 
     const container = document.getElementById('model-stats-container');

@@ -9,6 +9,7 @@ from app.db.crud import (
 )
 from app.channels.models import ChannelCreate, ChannelUpdate, ChannelResponse
 from app.config import settings
+from app.auth.jwt import create_token, verify_token
 import os
 
 router = APIRouter(tags=["Admin"])
@@ -19,30 +20,51 @@ async def get_db():
         yield session
 
 
-def verify_admin(request: Request):
-    """验证管理员密码"""
-    password = request.query_params.get("password") or request.headers.get("X-Admin-Password")
-    if password != settings.admin_password:
-        raise HTTPException(status_code=401, detail="Invalid admin password")
-    return True
+def get_admin_verifier():
+    """返回管理员验证依赖函数"""
+    def verify_admin(request: Request):
+        """验证管理员身份（支持 JWT token 或密码）"""
+        # 优先检查 JWT token
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            if verify_token(token):
+                return True
+
+        # 兼容旧的密码验证方式
+        password = request.headers.get("X-Admin-Password")
+        if password and password == settings.admin_password:
+            return True
+
+        raise HTTPException(status_code=401, detail="Invalid or expired authentication")
+    return verify_admin
+
+
+verify_admin = get_admin_verifier()
 
 
 @router.get("/admin", response_class=HTMLResponse)
-async def admin_page(password: str = None):
-    """管理界面首页"""
+async def admin_page():
+    """管理界面首页（登录后由前端验证）"""
     static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-    if password != settings.admin_password:
-        return FileResponse(os.path.join(static_dir, "login.html"))
     return FileResponse(os.path.join(static_dir, "admin.html"))
+
+
+@router.get("/admin/login", response_class=HTMLResponse)
+async def admin_login_page():
+    """管理界面登录页"""
+    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+    return FileResponse(os.path.join(static_dir, "login.html"))
 
 
 @router.post("/admin/login")
 async def admin_login(request: Request):
-    """管理员登录"""
+    """管理员登录，返回 JWT token"""
     body = await request.json()
     password = body.get("password")
     if password == settings.admin_password:
-        return {"success": True}
+        token = create_token("admin")
+        return {"success": True, "token": token}
     raise HTTPException(status_code=401, detail="Invalid password")
 
 

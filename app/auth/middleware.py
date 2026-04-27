@@ -8,7 +8,7 @@ from app.db.crud import get_api_key_by_hash
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    # 不需要认证的路径前缀
+    # 不需要认证的路径前缀（路由级别有自己的认证）
     PUBLIC_PREFIXES = [
         "/admin",
         "/stats",

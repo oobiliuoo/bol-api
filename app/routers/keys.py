@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import async_session
 from app.db.crud import create_api_key, get_all_api_keys, delete_api_key, toggle_api_key, get_api_key_by_id
 from app.auth.models import APIKeyCreate, APIKeyResponse, APIKeyList, APIKeyReveal
+from app.config import settings
+from app.auth.jwt import verify_token
+from app.utils.encryption import decrypt_key, is_encrypted
 
 router = APIRouter(prefix="/admin/keys", tags=["API Keys"])
 
@@ -12,8 +15,25 @@ async def get_db():
         yield session
 
 
+def verify_admin(request: Request):
+    """验证管理员身份（支持 JWT token 或密码）"""
+    # 优先检查 JWT token
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        if verify_token(token):
+            return True
+
+    # 兼容旧的密码验证方式
+    password = request.headers.get("X-Admin-Password")
+    if password and password == settings.admin_password:
+        return True
+
+    raise HTTPException(status_code=401, detail="Invalid or expired authentication")
+
+
 @router.post("", response_model=APIKeyResponse)
-async def create_key(data: APIKeyCreate, db: AsyncSession = Depends(get_db)):
+async def create_key(data: APIKeyCreate, db: AsyncSession = Depends(get_db), _: bool = Depends(verify_admin)):
     """创建新的API Key"""
     raw_key, api_key = await create_api_key(db, data.name)
     return APIKeyResponse(
@@ -27,7 +47,7 @@ async def create_key(data: APIKeyCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("", response_model=list[APIKeyList])
-async def list_keys(db: AsyncSession = Depends(get_db)):
+async def list_keys(db: AsyncSession = Depends(get_db), _: bool = Depends(verify_admin)):
     """列出所有API Key"""
     keys = await get_all_api_keys(db)
     return [
@@ -43,18 +63,26 @@ async def list_keys(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{key_id}/reveal", response_model=APIKeyReveal)
-async def reveal_key(key_id: int, db: AsyncSession = Depends(get_db)):
+async def reveal_key(key_id: int, db: AsyncSession = Depends(get_db), _: bool = Depends(verify_admin)):
     """显示完整API Key（需要管理员权限）"""
     api_key = await get_api_key_by_id(db, key_id)
     if not api_key:
         raise HTTPException(status_code=404, detail="API Key not found")
     if not api_key.encrypted_key:
         raise HTTPException(status_code=404, detail="Key not stored")
-    return APIKeyReveal(id=api_key.id, key=api_key.encrypted_key)
+    # 解密或返回原值（兼容旧数据）
+    try:
+        if is_encrypted(api_key.encrypted_key):
+            key = decrypt_key(api_key.encrypted_key)
+        else:
+            key = api_key.encrypted_key
+    except Exception:
+        key = api_key.encrypted_key
+    return APIKeyReveal(id=api_key.id, key=key)
 
 
 @router.delete("/{key_id}")
-async def delete_key(key_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_key(key_id: int, db: AsyncSession = Depends(get_db), _: bool = Depends(verify_admin)):
     """删除API Key"""
     success = await delete_api_key(db, key_id)
     if not success:
@@ -63,7 +91,7 @@ async def delete_key(key_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{key_id}")
-async def toggle_key(key_id: int, is_active: bool, db: AsyncSession = Depends(get_db)):
+async def toggle_key(key_id: int, is_active: bool, db: AsyncSession = Depends(get_db), _: bool = Depends(verify_admin)):
     """启用/禁用API Key"""
     api_key = await toggle_api_key(db, key_id, is_active)
     if not api_key:

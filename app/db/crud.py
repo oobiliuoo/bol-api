@@ -5,15 +5,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import APIKey, Channel, UsageLog, ModelPrice
 from datetime import datetime, timedelta
 from typing import Optional, List
+from app.utils.encryption import encrypt_key, decrypt_key, is_encrypted
 
 
 async def create_api_key(session: AsyncSession, name: Optional[str] = None) -> tuple[str, APIKey]:
     raw_key = f"bol-{secrets.token_urlsafe(28)}"  # 添加前缀便于识别
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     key_prefix = raw_key[:12] + "..." + raw_key[-4:]  # 显示前12位和后4位
+    encrypted_key = encrypt_key(raw_key)  # 加密存储
     api_key = APIKey(
         key_hash=key_hash,
-        encrypted_key=raw_key,  # 管理界面已有密码保护，暂时直接存储
+        encrypted_key=encrypted_key,
         key_prefix=key_prefix,
         name=name
     )
