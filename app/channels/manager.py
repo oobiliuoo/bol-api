@@ -71,18 +71,23 @@ class ChannelManager:
         return channels[-1]
 
     @staticmethod
-    async def select_channel(session: AsyncSession, model: str) -> Optional[Channel]:
+    async def select_channel(session: AsyncSession, model: str, exclude_ids: List[int] = None) -> Optional[Channel]:
         """根据模型选择合适的渠道
 
         调度策略：
         1. 筛选支持该模型的活跃渠道
-        2. 按优先级分组（高优先级优先）
-        3. 在最高优先级组内按权重随机选择
+        2. 排除已失败的渠道（exclude_ids）
+        3. 按优先级分组（高优先级优先）
+        4. 在最高优先级组内按权重随机选择
         """
+        exclude_ids = exclude_ids or []
         channels = await get_active_channels(session)
 
-        # 筛选支持该模型的渠道
-        matching_channels = [c for c in channels if ChannelManager._match_model(c, model)]
+        # 筛选支持该模型且未被排除的渠道
+        matching_channels = [
+            c for c in channels
+            if ChannelManager._match_model(c, model) and c.id not in exclude_ids
+        ]
 
         if not matching_channels:
             return None
@@ -101,6 +106,18 @@ class ChannelManager:
 
         # 在最高优先级组内按权重选择
         return ChannelManager._select_by_weight(top_group)
+
+    @staticmethod
+    async def select_all_channels(session: AsyncSession, model: str) -> List[Channel]:
+        """获取所有支持该模型的渠道（用于fallback）
+
+        返回按优先级降序排列的渠道列表
+        """
+        channels = await get_active_channels(session)
+        matching_channels = [c for c in channels if ChannelManager._match_model(c, model)]
+        # 按优先级降序排序
+        matching_channels.sort(key=lambda c: c.priority, reverse=True)
+        return matching_channels
 
     @staticmethod
     async def get_provider(session: AsyncSession, model: str) -> Optional[BaseProvider]:

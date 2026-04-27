@@ -1,13 +1,12 @@
 import hashlib
-import json
 from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from app.db.database import async_session
 from app.db.crud import get_api_key_by_hash
 
 
-class AuthMiddleware(BaseHTTPMiddleware):
+def setup_auth_middleware(app):
+    """设置认证中间件"""
     # 不需要认证的路径前缀（路由级别有自己的认证）
     PUBLIC_PREFIXES = [
         "/admin",
@@ -22,15 +21,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/",
     ]
 
-    async def dispatch(self, request: Request, call_next):
+    @app.middleware("http")
+    async def auth_middleware(request: Request, call_next):
         path = request.url.path
 
         # 检查精确匹配
-        if path in self.PUBLIC_EXACT:
+        if path in PUBLIC_EXACT:
             return await call_next(request)
 
         # 检查前缀匹配
-        for prefix in self.PUBLIC_PREFIXES:
+        for prefix in PUBLIC_PREFIXES:
             if path.startswith(prefix):
                 return await call_next(request)
 

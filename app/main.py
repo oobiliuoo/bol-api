@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.db.database import init_db
-from app.auth.middleware import AuthMiddleware
+from app.auth.middleware import setup_auth_middleware
 from app.stats.recorder import UsageRecorder
 from app.routers import proxy, keys, stats, admin
 import os
@@ -60,8 +60,8 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# 认证中间件
-app.add_middleware(AuthMiddleware)
+# 认证中间件（使用 @app.middleware("http") 方式）
+setup_auth_middleware(app)
 
 # 注册路由
 app.include_router(proxy.router)

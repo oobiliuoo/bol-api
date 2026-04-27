@@ -12,6 +12,9 @@ from app.providers.anthropic import AnthropicProvider
 
 router = APIRouter()
 
+# 最大重试次数（尝试不同渠道）
+MAX_FALLBACK_ATTEMPTS = 3
+
 
 async def get_db():
     async with async_session() as session:
@@ -28,86 +31,104 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
     if not model:
         raise HTTPException(status_code=400, detail="Missing model parameter")
 
-    # 获取渠道和Provider
-    channel = await ChannelManager.select_channel(db, model)
-    if not channel:
-        raise HTTPException(status_code=400, detail=f"No available channel for model: {model}")
-
-    provider = create_provider(channel)
-    if not provider.supports_model(model):
-        raise HTTPException(status_code=400, detail=f"Channel does not support model: {model}")
-
     api_key_id = getattr(request.state, "api_key_id", None)
     start_time = time.time()
 
-    try:
-        if stream:
-            return StreamingResponse(
-                stream_chat_response(provider, body, channel, api_key_id, request),
-                media_type="text/event-stream"
-            )
-        else:
-            response = await provider.chat_completion(body)
+    # 获取所有支持该模型的渠道用于fallback
+    all_channels = await ChannelManager.select_all_channels(db, model)
+    if not all_channels:
+        raise HTTPException(status_code=400, detail=f"No available channel for model: {model}")
+
+    # 尝试多个渠道
+    failed_channels = []
+    last_error = None
+
+    for attempt in range(min(MAX_FALLBACK_ATTEMPTS, len(all_channels))):
+        # 选择渠道（排除已失败的）
+        channel = await ChannelManager.select_channel(db, model, exclude_ids=[c.id for c in failed_channels])
+        if not channel:
+            break
+
+        provider = create_provider(channel)
+        if not provider.supports_model(model):
+            failed_channels.append(channel)
+            continue
+
+        try:
+            if stream:
+                return StreamingResponse(
+                    stream_chat_response(provider, body, channel, api_key_id, request, failed_channels),
+                    media_type="text/event-stream"
+                )
+            else:
+                response = await provider.chat_completion(body)
+                latency_ms = int((time.time() - start_time) * 1000)
+
+                # 提取用量
+                usage = provider.extract_usage(response)
+
+                # 记录用量
+                cost = await calculate_cost(db, model, usage["request_tokens"], usage["response_tokens"])
+                await UsageRecorder.record(
+                    api_key_id=api_key_id,
+                    channel_id=channel.id,
+                    provider=channel.provider_type,
+                    model=model,
+                    endpoint="/v1/chat/completions",
+                    request_tokens=usage["request_tokens"],
+                    response_tokens=usage["response_tokens"],
+                    cost=cost,
+                    latency_ms=latency_ms
+                )
+
+                return JSONResponse(content=response)
+
+        except httpx.TimeoutException as e:
+            failed_channels.append(channel)
+            last_error = e
+            continue  # 尝试下一个渠道
+        except httpx.ConnectError as e:
+            failed_channels.append(channel)
+            last_error = e
+            continue  # 尝试下一个渠道
+        except Exception as e:
+            # 非网络错误，不重试
             latency_ms = int((time.time() - start_time) * 1000)
-
-            # 提取用量
-            usage = provider.extract_usage(response)
-
-            # 记录用量
-            cost = await calculate_cost(db, model, usage["request_tokens"], usage["response_tokens"])
             await UsageRecorder.record(
                 api_key_id=api_key_id,
                 channel_id=channel.id,
                 provider=channel.provider_type,
                 model=model,
                 endpoint="/v1/chat/completions",
-                request_tokens=usage["request_tokens"],
-                response_tokens=usage["response_tokens"],
-                cost=cost,
+                status_code=500,
                 latency_ms=latency_ms
             )
+            raise HTTPException(status_code=500, detail=str(e))
 
-            return JSONResponse(content=response)
-
-    except httpx.TimeoutException:
-        latency_ms = int((time.time() - start_time) * 1000)
+    # 所有渠道都失败
+    latency_ms = int((time.time() - start_time) * 1000)
+    if failed_channels:
+        # 记录最后一个失败渠道
+        last_channel = failed_channels[-1]
         await UsageRecorder.record(
             api_key_id=api_key_id,
-            channel_id=channel.id,
-            provider=channel.provider_type,
+            channel_id=last_channel.id,
+            provider=last_channel.provider_type,
             model=model,
             endpoint="/v1/chat/completions",
-            status_code=504,
+            status_code=504 if isinstance(last_error, httpx.TimeoutException) else 502,
             latency_ms=latency_ms
         )
-        raise HTTPException(status_code=504, detail="Upstream API timeout")
-    except httpx.ConnectError as e:
-        latency_ms = int((time.time() - start_time) * 1000)
-        await UsageRecorder.record(
-            api_key_id=api_key_id,
-            channel_id=channel.id,
-            provider=channel.provider_type,
-            model=model,
-            endpoint="/v1/chat/completions",
-            status_code=502,
-            latency_ms=latency_ms
-        )
-        raise HTTPException(status_code=502, detail=f"Failed to connect to upstream: {str(e)}")
-    except Exception as e:
-        latency_ms = int((time.time() - start_time) * 1000)
-        await UsageRecorder.record(
-            api_key_id=api_key_id,
-            channel_id=channel.id,
-            provider=channel.provider_type,
-            model=model,
-            endpoint="/v1/chat/completions",
-            status_code=500,
-            latency_ms=latency_ms
-        )
-        raise HTTPException(status_code=500, detail=str(e))
+
+    if isinstance(last_error, httpx.TimeoutException):
+        raise HTTPException(status_code=504, detail="All channels timed out")
+    elif isinstance(last_error, httpx.ConnectError):
+        raise HTTPException(status_code=502, detail=f"All channels failed to connect: {str(last_error)}")
+    else:
+        raise HTTPException(status_code=503, detail="No available channel after fallback attempts")
 
 
-async def stream_chat_response(provider, body, channel, api_key_id, request):
+async def stream_chat_response(provider, body, channel, api_key_id, request, failed_channels=None):
     """流式响应处理"""
     start_time = time.time()
     total_content = ""
@@ -115,7 +136,10 @@ async def stream_chat_response(provider, body, channel, api_key_id, request):
 
     try:
         async for line in provider.stream_chat_completion(body):
-            yield f"{line}\n"
+            # SSE格式：每个事件以\n\n结尾
+            if line.strip():  # 非空行
+                yield f"{line}\n\n"
+            # 空行跳过，由上面的\n\n提供分隔
             if line.startswith("data: ") and line != "data: [DONE]":
                 try:
                     data = json.loads(line[6:])
@@ -150,7 +174,7 @@ async def stream_chat_response(provider, body, channel, api_key_id, request):
         # 发送标准OpenAI格式的错误事件
         error_data = {"error": {"message": error_msg, "type": "internal_error"}}
         yield f"data: {json.dumps(error_data)}\n\n"
-        yield "data: [DONE]\n"
+        yield "data: [DONE]\n\n"
 
 
 @router.post("/v1/messages")
@@ -163,80 +187,98 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
     if not model:
         raise HTTPException(status_code=400, detail="Missing model parameter")
 
-    # 获取渠道和Provider
-    channel = await ChannelManager.select_channel(db, model)
-    if not channel:
-        raise HTTPException(status_code=400, detail=f"No available channel for model: {model}")
-
-    provider = create_provider(channel)
-    if not provider.supports_model(model):
-        raise HTTPException(status_code=400, detail=f"Channel does not support model: {model}")
-
     api_key_id = getattr(request.state, "api_key_id", None)
     start_time = time.time()
 
-    try:
-        if stream:
-            return StreamingResponse(
-                stream_anthropic_response(provider, body, channel, api_key_id, request),
-                media_type="text/event-stream"
-            )
-        else:
-            response = await provider.chat_completion(body)
-            latency_ms = int((time.time() - start_time) * 1000)
+    # 获取所有支持该模型的渠道用于fallback
+    all_channels = await ChannelManager.select_all_channels(db, model)
+    if not all_channels:
+        raise HTTPException(status_code=400, detail=f"No available channel for model: {model}")
 
-            usage = provider.extract_usage(response)
-            cost = await calculate_cost(db, model, usage["request_tokens"], usage["response_tokens"])
+    # 尝试多个渠道
+    failed_channels = []
+    last_error = None
+
+    for attempt in range(min(MAX_FALLBACK_ATTEMPTS, len(all_channels))):
+        # 选择渠道（排除已失败的）
+        channel = await ChannelManager.select_channel(db, model, exclude_ids=[c.id for c in failed_channels])
+        if not channel:
+            break
+
+        provider = create_provider(channel)
+        if not provider.supports_model(model):
+            failed_channels.append(channel)
+            continue
+
+        try:
+            if stream:
+                return StreamingResponse(
+                    stream_anthropic_response(provider, body, channel, api_key_id, request),
+                    media_type="text/event-stream"
+                )
+            else:
+                response = await provider.chat_completion(body)
+                latency_ms = int((time.time() - start_time) * 1000)
+
+                usage = provider.extract_usage(response)
+                cost = await calculate_cost(db, model, usage["request_tokens"], usage["response_tokens"])
+                await UsageRecorder.record(
+                    api_key_id=api_key_id,
+                    channel_id=channel.id,
+                    provider=channel.provider_type,
+                    model=model,
+                    endpoint="/v1/messages",
+                    request_tokens=usage["request_tokens"],
+                    response_tokens=usage["response_tokens"],
+                    cost=cost,
+                    latency_ms=latency_ms
+                )
+
+                return JSONResponse(content=response)
+
+        except httpx.TimeoutException as e:
+            failed_channels.append(channel)
+            last_error = e
+            continue  # 尝试下一个渠道
+        except httpx.ConnectError as e:
+            failed_channels.append(channel)
+            last_error = e
+            continue  # 尝试下一个渠道
+        except Exception as e:
+            # 非网络错误，不重试
+            latency_ms = int((time.time() - start_time) * 1000)
             await UsageRecorder.record(
                 api_key_id=api_key_id,
                 channel_id=channel.id,
                 provider=channel.provider_type,
                 model=model,
                 endpoint="/v1/messages",
-                request_tokens=usage["request_tokens"],
-                response_tokens=usage["response_tokens"],
-                cost=cost,
+                status_code=500,
                 latency_ms=latency_ms
             )
+            raise HTTPException(status_code=500, detail=str(e))
 
-            return JSONResponse(content=response)
+    # 所有渠道都失败
+    latency_ms = int((time.time() - start_time) * 1000)
+    if failed_channels:
+        # 记录最后一个失败渠道
+        last_channel = failed_channels[-1]
+        await UsageRecorder.record(
+            api_key_id=api_key_id,
+            channel_id=last_channel.id,
+            provider=last_channel.provider_type,
+            model=model,
+            endpoint="/v1/messages",
+            status_code=504 if isinstance(last_error, httpx.TimeoutException) else 502,
+            latency_ms=latency_ms
+        )
 
-    except httpx.TimeoutException:
-        latency_ms = int((time.time() - start_time) * 1000)
-        await UsageRecorder.record(
-            api_key_id=api_key_id,
-            channel_id=channel.id,
-            provider=channel.provider_type,
-            model=model,
-            endpoint="/v1/messages",
-            status_code=504,
-            latency_ms=latency_ms
-        )
-        raise HTTPException(status_code=504, detail="Upstream API timeout")
-    except httpx.ConnectError as e:
-        latency_ms = int((time.time() - start_time) * 1000)
-        await UsageRecorder.record(
-            api_key_id=api_key_id,
-            channel_id=channel.id,
-            provider=channel.provider_type,
-            model=model,
-            endpoint="/v1/messages",
-            status_code=502,
-            latency_ms=latency_ms
-        )
-        raise HTTPException(status_code=502, detail=f"Failed to connect to upstream: {str(e)}")
-    except Exception as e:
-        latency_ms = int((time.time() - start_time) * 1000)
-        await UsageRecorder.record(
-            api_key_id=api_key_id,
-            channel_id=channel.id,
-            provider=channel.provider_type,
-            model=model,
-            endpoint="/v1/messages",
-            status_code=500,
-            latency_ms=latency_ms
-        )
-        raise HTTPException(status_code=500, detail=str(e))
+    if isinstance(last_error, httpx.TimeoutException):
+        raise HTTPException(status_code=504, detail="All channels timed out")
+    elif isinstance(last_error, httpx.ConnectError):
+        raise HTTPException(status_code=502, detail=f"All channels failed to connect: {str(last_error)}")
+    else:
+        raise HTTPException(status_code=503, detail="No available channel after fallback attempts")
 
 
 async def stream_anthropic_response(provider, body, channel, api_key_id, request):
@@ -249,7 +291,9 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
 
     try:
         async for line in provider.stream_chat_completion(body):
-            yield f"{line}\n"
+            # SSE格式：每个事件以\n\n结尾
+            if line.strip():  # 非空行
+                yield f"{line}\n\n"
             # 兼容两种格式: "data: {...}" 和 "data:{...}"
             if line.startswith("data:"):
                 try:
