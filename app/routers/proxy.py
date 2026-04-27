@@ -1,5 +1,6 @@
 import time
 import json
+import httpx
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,6 +69,30 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
 
             return JSONResponse(content=response)
 
+    except httpx.TimeoutException:
+        latency_ms = int((time.time() - start_time) * 1000)
+        await UsageRecorder.record(
+            api_key_id=api_key_id,
+            channel_id=channel.id,
+            provider=channel.provider_type,
+            model=model,
+            endpoint="/v1/chat/completions",
+            status_code=504,
+            latency_ms=latency_ms
+        )
+        raise HTTPException(status_code=504, detail="Upstream API timeout")
+    except httpx.ConnectError as e:
+        latency_ms = int((time.time() - start_time) * 1000)
+        await UsageRecorder.record(
+            api_key_id=api_key_id,
+            channel_id=channel.id,
+            provider=channel.provider_type,
+            model=model,
+            endpoint="/v1/chat/completions",
+            status_code=502,
+            latency_ms=latency_ms
+        )
+        raise HTTPException(status_code=502, detail=f"Failed to connect to upstream: {str(e)}")
     except Exception as e:
         latency_ms = int((time.time() - start_time) * 1000)
         await UsageRecorder.record(
@@ -121,7 +146,11 @@ async def stream_chat_response(provider, body, channel, api_key_id, request):
             )
 
     except Exception as e:
-        yield f"data: {{'error': '{str(e)}'}}\n"
+        error_msg = str(e)
+        # 发送标准OpenAI格式的错误事件
+        error_data = {"error": {"message": error_msg, "type": "internal_error"}}
+        yield f"data: {json.dumps(error_data)}\n\n"
+        yield "data: [DONE]\n"
 
 
 @router.post("/v1/messages")
@@ -172,6 +201,30 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
 
             return JSONResponse(content=response)
 
+    except httpx.TimeoutException:
+        latency_ms = int((time.time() - start_time) * 1000)
+        await UsageRecorder.record(
+            api_key_id=api_key_id,
+            channel_id=channel.id,
+            provider=channel.provider_type,
+            model=model,
+            endpoint="/v1/messages",
+            status_code=504,
+            latency_ms=latency_ms
+        )
+        raise HTTPException(status_code=504, detail="Upstream API timeout")
+    except httpx.ConnectError as e:
+        latency_ms = int((time.time() - start_time) * 1000)
+        await UsageRecorder.record(
+            api_key_id=api_key_id,
+            channel_id=channel.id,
+            provider=channel.provider_type,
+            model=model,
+            endpoint="/v1/messages",
+            status_code=502,
+            latency_ms=latency_ms
+        )
+        raise HTTPException(status_code=502, detail=f"Failed to connect to upstream: {str(e)}")
     except Exception as e:
         latency_ms = int((time.time() - start_time) * 1000)
         await UsageRecorder.record(
@@ -243,4 +296,10 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
             )
 
     except Exception as e:
-        yield f"event: error\ndata: {{'error': '{str(e)}'}}\n"
+        error_msg = str(e)
+        # 发送标准Anthropic格式的错误事件
+        error_data = {
+            "type": "error",
+            "error": {"type": "internal_error", "message": error_msg}
+        }
+        yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
