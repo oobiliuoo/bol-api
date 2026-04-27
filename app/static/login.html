@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/static/bol-icon.png">
     <title>bol-api // Authentication</title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
@@ -217,18 +218,10 @@
         .logo-icon {
             width: 56px;
             height: 56px;
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
             border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: 'Orbitron', sans-serif;
-            font-weight: 900;
-            font-size: 24px;
-            color: var(--bg-void);
+            object-fit: contain;
             box-shadow:
-                0 0 20px var(--glow-primary),
-                inset 0 0 15px rgba(255, 255, 255, 0.2);
+                0 0 20px var(--glow-primary);
             animation: logoPulse 3s ease-in-out infinite;
             position: relative;
         }
@@ -242,20 +235,6 @@
             }
         }
 
-        .logo-icon::after {
-            content: '';
-            position: absolute;
-            inset: -3px;
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            border-radius: 14px;
-            opacity: 0;
-            animation: logoRing 4s ease-in-out infinite;
-        }
-
-        @keyframes logoRing {
-            0%, 100% { opacity: 0; transform: scale(1); }
-            50% { opacity: 0.4; transform: scale(1.1); }
-        }
 
         .logo-text {
             font-family: 'Orbitron', sans-serif;
@@ -437,7 +416,7 @@
     <div class="login-container">
         <div class="login-box">
             <div class="logo">
-                <div class="logo-icon">B</div>
+                <img class="logo-icon" src="/static/bol-icon.png" alt="B">
                 <div class="logo-text">bol<span>-api</span></div>
             </div>
 
