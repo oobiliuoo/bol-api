@@ -9,6 +9,9 @@ from app.utils.http_client import AsyncHttpClient
 class CustomProvider(BaseProvider):
     """自定义渠道适配器，支持OpenAI和Anthropic两种协议格式"""
 
+    # OpenAI 格式不支持的参数（部分上游服务如 ModelScope 不支持）
+    OPENAI_UNSUPPORTED_PARAMS = {"tools", "tool_choice", "functions", "function_call"}
+
     def __init__(self, base_url: str, api_key: str, models: List[str], api_protocol: str = "openai"):
         super().__init__(base_url, api_key, models)
         self.api_protocol = api_protocol
@@ -27,9 +30,18 @@ class CustomProvider(BaseProvider):
                 "Content-Type": "application/json",
             }
 
+    def _filter_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """过滤掉不支持的参数"""
+        filtered = request.copy()
+        if self.api_protocol == "openai":
+            for param in self.OPENAI_UNSUPPORTED_PARAMS:
+                filtered.pop(param, None)
+        return filtered
+
     async def chat_completion(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """根据协议类型发送不同格式的请求"""
         headers = self.get_headers()
+        request = self._filter_request(request)
         request["stream"] = False
 
         if self.api_protocol == "anthropic":
@@ -46,6 +58,7 @@ class CustomProvider(BaseProvider):
     async def stream_chat_completion(self, request: Dict[str, Any]) -> AsyncIterator[str]:
         """流式请求"""
         headers = self.get_headers()
+        request = self._filter_request(request)
         request["stream"] = True
 
         if self.api_protocol == "anthropic":
