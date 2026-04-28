@@ -24,6 +24,8 @@ class UsageSummaryResponse(BaseModel):
     total_tokens: int
     total_cost: float
     days: int
+    rpm: float
+    tpm: float
 
 
 class ModelStat(BaseModel):

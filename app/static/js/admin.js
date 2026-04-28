@@ -57,6 +57,22 @@ async function loadStats() {
             </div>
         </div>
         <div class="stat-card">
+            <div class="stat-icon">⚡</div>
+            <div class="stat-content">
+                <div class="stat-value">${data.rpm}</div>
+                <div class="stat-label">RPM</div>
+                <div class="stat-detail">每分钟请求数</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">📝</div>
+            <div class="stat-content">
+                <div class="stat-value">${formatNumber(data.tpm)}</div>
+                <div class="stat-label">TPM</div>
+                <div class="stat-detail">每分钟 Token 数</div>
+            </div>
+        </div>
+        <div class="stat-card">
             <div class="stat-icon">📈</div>
             <div class="stat-content">
                 <div class="stat-value">${data.days}</div>

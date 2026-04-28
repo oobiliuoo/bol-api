@@ -8,16 +8,15 @@ from typing import Optional, List
 from app.utils.encryption import encrypt_key, decrypt_key, is_encrypted
 
 
-async def create_api_key(session: AsyncSession, name: Optional[str] = None) -> tuple[str, APIKey]:
+async def create_api_key(
+    session: AsyncSession, name: Optional[str] = None
+) -> tuple[str, APIKey]:
     raw_key = f"bol-{secrets.token_urlsafe(28)}"  # 添加前缀便于识别
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     key_prefix = raw_key[:12] + "..." + raw_key[-4:]  # 显示前12位和后4位
     encrypted_key = encrypt_key(raw_key)  # 加密存储
     api_key = APIKey(
-        key_hash=key_hash,
-        encrypted_key=encrypted_key,
-        key_prefix=key_prefix,
-        name=name
+        key_hash=key_hash, encrypted_key=encrypted_key, key_prefix=key_prefix, name=name
     )
     session.add(api_key)
     await session.commit()
@@ -50,7 +49,9 @@ async def delete_api_key(session: AsyncSession, key_id: int) -> bool:
     return False
 
 
-async def toggle_api_key(session: AsyncSession, key_id: int, is_active: bool) -> Optional[APIKey]:
+async def toggle_api_key(
+    session: AsyncSession, key_id: int, is_active: bool
+) -> Optional[APIKey]:
     result = await session.execute(select(APIKey).where(APIKey.id == key_id))
     api_key = result.scalar_one_or_none()
     if api_key:
@@ -61,10 +62,19 @@ async def toggle_api_key(session: AsyncSession, key_id: int, is_active: bool) ->
     return None
 
 
-async def create_channel(session: AsyncSession, name: str, provider_type: str, base_url: str,
-                         api_key: str, models: List[str], priority: int = 1, weight: float = 1.0,
-                         api_protocol: str = "openai") -> Channel:
+async def create_channel(
+    session: AsyncSession,
+    name: str,
+    provider_type: str,
+    base_url: str,
+    api_key: str,
+    models: List[str],
+    priority: int = 1,
+    weight: float = 1.0,
+    api_protocol: str = "openai",
+) -> Channel:
     from app.channels.manager import ChannelCache
+
     channel = Channel(
         name=name,
         provider_type=provider_type,
@@ -73,7 +83,7 @@ async def create_channel(session: AsyncSession, name: str, provider_type: str, b
         api_key=api_key,
         models=models,
         priority=priority,
-        weight=weight
+        weight=weight,
     )
     session.add(channel)
     await session.commit()
@@ -89,22 +99,39 @@ async def get_all_channels(session: AsyncSession) -> List[Channel]:
 
 async def get_active_channels(session: AsyncSession) -> List[Channel]:
     result = await session.execute(
-        select(Channel).where(Channel.is_active == True).order_by(Channel.priority.desc())
+        select(Channel)
+        .where(Channel.is_active == True)
+        .order_by(Channel.priority.desc())
     )
     return result.scalars().all()
 
 
-async def get_channel_by_id(session: AsyncSession, channel_id: int) -> Optional[Channel]:
+async def get_channel_by_id(
+    session: AsyncSession, channel_id: int
+) -> Optional[Channel]:
     result = await session.execute(select(Channel).where(Channel.id == channel_id))
     return result.scalar_one_or_none()
 
 
 # 渠道可更新字段白名单
-CHANNEL_UPDATE_FIELDS = {"name", "provider_type", "api_protocol", "base_url", "api_key", "models", "is_active", "priority", "weight"}
+CHANNEL_UPDATE_FIELDS = {
+    "name",
+    "provider_type",
+    "api_protocol",
+    "base_url",
+    "api_key",
+    "models",
+    "is_active",
+    "priority",
+    "weight",
+}
 
 
-async def update_channel(session: AsyncSession, channel_id: int, **kwargs) -> Optional[Channel]:
+async def update_channel(
+    session: AsyncSession, channel_id: int, **kwargs
+) -> Optional[Channel]:
     from app.channels.manager import ChannelCache
+
     result = await session.execute(select(Channel).where(Channel.id == channel_id))
     channel = result.scalar_one_or_none()
     if channel:
@@ -119,9 +146,12 @@ async def update_channel(session: AsyncSession, channel_id: int, **kwargs) -> Op
     return None
 
 
-async def toggle_channel(session: AsyncSession, channel_id: int, is_active: bool) -> Optional[Channel]:
+async def toggle_channel(
+    session: AsyncSession, channel_id: int, is_active: bool
+) -> Optional[Channel]:
     """切换渠道启用/禁用状态"""
     from app.channels.manager import ChannelCache
+
     result = await session.execute(select(Channel).where(Channel.id == channel_id))
     channel = result.scalar_one_or_none()
     if channel:
@@ -135,6 +165,7 @@ async def toggle_channel(session: AsyncSession, channel_id: int, is_active: bool
 
 async def delete_channel(session: AsyncSession, channel_id: int) -> bool:
     from app.channels.manager import ChannelCache
+
     result = await session.execute(select(Channel).where(Channel.id == channel_id))
     channel = result.scalar_one_or_none()
     if channel:
@@ -152,9 +183,13 @@ async def create_usage_log(session: AsyncSession, **kwargs) -> UsageLog:
     return usage_log
 
 
-async def get_usage_logs(session: AsyncSession, api_key_id: Optional[int] = None,
-                        start_time: Optional[datetime] = None, end_time: Optional[datetime] = None,
-                        limit: int = 100) -> List[UsageLog]:
+async def get_usage_logs(
+    session: AsyncSession,
+    api_key_id: Optional[int] = None,
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
+    limit: int = 100,
+) -> List[UsageLog]:
     query = select(UsageLog).order_by(UsageLog.timestamp.desc()).limit(limit)
     if api_key_id:
         query = query.where(UsageLog.api_key_id == api_key_id)
@@ -166,17 +201,18 @@ async def get_usage_logs(session: AsyncSession, api_key_id: Optional[int] = None
     return result.scalars().all()
 
 
-async def get_usage_summary(session: AsyncSession, api_key_id: Optional[int] = None,
-                           days: int = 7) -> dict:
+async def get_usage_summary(
+    session: AsyncSession, api_key_id: Optional[int] = None, days: int = 7
+) -> dict:
     """获取用量统计摘要（使用 SQL 聚合）"""
     start_time = datetime.now(timezone.utc) - timedelta(days=days)
 
     # 使用 SQL 聚合函数
     query = select(
-        func.count().label('total_requests'),
-        func.sum(UsageLog.request_tokens).label('total_request_tokens'),
-        func.sum(UsageLog.response_tokens).label('total_response_tokens'),
-        func.sum(UsageLog.cost).label('total_cost')
+        func.count().label("total_requests"),
+        func.sum(UsageLog.request_tokens).label("total_request_tokens"),
+        func.sum(UsageLog.response_tokens).label("total_response_tokens"),
+        func.sum(UsageLog.cost).label("total_cost"),
     ).where(UsageLog.timestamp >= start_time)
 
     if api_key_id:
@@ -187,14 +223,36 @@ async def get_usage_summary(session: AsyncSession, api_key_id: Optional[int] = N
 
     total_request_tokens = row.total_request_tokens or 0
     total_response_tokens = row.total_response_tokens or 0
+    total_tokens = total_request_tokens + total_response_tokens
+
+    # 计算实际活跃时间窗口（第一条到最后一条日志的时间差）
+    time_query = select(
+        func.min(UsageLog.timestamp).label("first_time"),
+        func.max(UsageLog.timestamp).label("last_time"),
+    ).where(UsageLog.timestamp >= start_time)
+    if api_key_id:
+        time_query = time_query.where(UsageLog.api_key_id == api_key_id)
+
+    time_result = await session.execute(time_query)
+    time_row = time_result.one()
+
+    if time_row.first_time and time_row.last_time:
+        delta = time_row.last_time - time_row.first_time
+        active_minutes = max(1, int(delta.total_seconds() / 60))
+    else:
+        active_minutes = days * 24 * 60
 
     return {
         "total_requests": row.total_requests or 0,
         "total_request_tokens": total_request_tokens,
         "total_response_tokens": total_response_tokens,
-        "total_tokens": total_request_tokens + total_response_tokens,
+        "total_tokens": total_tokens,
         "total_cost": row.total_cost or 0.0,
-        "days": days
+        "days": days,
+        "rpm": round((row.total_requests or 0) / active_minutes, 2)
+        if active_minutes > 0
+        else 0.0,
+        "tpm": round(total_tokens / active_minutes, 2) if active_minutes > 0 else 0.0,
     }
 
 
@@ -203,13 +261,17 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
     start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     # 使用 SQL GROUP BY 聚合
-    query = select(
-        UsageLog.model,
-        func.count().label('requests'),
-        func.sum(UsageLog.request_tokens).label('request_tokens'),
-        func.sum(UsageLog.response_tokens).label('response_tokens'),
-        func.sum(UsageLog.cost).label('cost')
-    ).where(UsageLog.timestamp >= start_time).group_by(UsageLog.model)
+    query = (
+        select(
+            UsageLog.model,
+            func.count().label("requests"),
+            func.sum(UsageLog.request_tokens).label("request_tokens"),
+            func.sum(UsageLog.response_tokens).label("response_tokens"),
+            func.sum(UsageLog.cost).label("cost"),
+        )
+        .where(UsageLog.timestamp >= start_time)
+        .group_by(UsageLog.model)
+    )
 
     result = await session.execute(query)
     rows = result.all()
@@ -225,13 +287,15 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
         resp_tokens = row.response_tokens or 0
         cost = row.cost or 0.0
 
-        model_stats.append({
-            "model": row.model,
-            "requests": row.requests,
-            "request_tokens": req_tokens,
-            "response_tokens": resp_tokens,
-            "cost": cost,
-        })
+        model_stats.append(
+            {
+                "model": row.model,
+                "requests": row.requests,
+                "request_tokens": req_tokens,
+                "response_tokens": resp_tokens,
+                "cost": cost,
+            }
+        )
 
         total_requests += row.requests
         total_tokens += req_tokens + resp_tokens
@@ -252,18 +316,16 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
         "total_tokens": total_tokens,
         "total_cost": total_cost,
         "period": period_label,
-        "hours": hours
+        "hours": hours,
     }
 
 
 # 模型价格管理
-async def create_model_price(session: AsyncSession, model: str, input_price: float, output_price: float) -> ModelPrice:
+async def create_model_price(
+    session: AsyncSession, model: str, input_price: float, output_price: float
+) -> ModelPrice:
     """创建模型价格配置"""
-    price = ModelPrice(
-        model=model,
-        input_price=input_price,
-        output_price=output_price
-    )
+    price = ModelPrice(model=model, input_price=input_price, output_price=output_price)
     session.add(price)
     await session.commit()
     await session.refresh(price)
@@ -278,11 +340,17 @@ async def get_all_model_prices(session: AsyncSession) -> List[ModelPrice]:
 
 async def get_model_price(session: AsyncSession, model: str) -> Optional[ModelPrice]:
     """获取特定模型的价格配置"""
-    result = await session.execute(select(ModelPrice).where(ModelPrice.model == model, ModelPrice.is_active == True))
+    result = await session.execute(
+        select(ModelPrice).where(
+            ModelPrice.model == model, ModelPrice.is_active == True
+        )
+    )
     return result.scalar_one_or_none()
 
 
-async def get_model_price_by_id(session: AsyncSession, price_id: int) -> Optional[ModelPrice]:
+async def get_model_price_by_id(
+    session: AsyncSession, price_id: int
+) -> Optional[ModelPrice]:
     """通过ID获取价格配置"""
     result = await session.execute(select(ModelPrice).where(ModelPrice.id == price_id))
     return result.scalar_one_or_none()
@@ -292,7 +360,9 @@ async def get_model_price_by_id(session: AsyncSession, price_id: int) -> Optiona
 MODEL_PRICE_UPDATE_FIELDS = {"model", "input_price", "output_price", "is_active"}
 
 
-async def update_model_price(session: AsyncSession, price_id: int, **kwargs) -> Optional[ModelPrice]:
+async def update_model_price(
+    session: AsyncSession, price_id: int, **kwargs
+) -> Optional[ModelPrice]:
     """更新模型价格配置"""
     result = await session.execute(select(ModelPrice).where(ModelPrice.id == price_id))
     price = result.scalar_one_or_none()
@@ -307,7 +377,9 @@ async def update_model_price(session: AsyncSession, price_id: int, **kwargs) -> 
     return None
 
 
-async def toggle_model_price(session: AsyncSession, price_id: int, is_active: bool) -> Optional[ModelPrice]:
+async def toggle_model_price(
+    session: AsyncSession, price_id: int, is_active: bool
+) -> Optional[ModelPrice]:
     """切换模型价格启用/禁用状态"""
     result = await session.execute(select(ModelPrice).where(ModelPrice.id == price_id))
     price = result.scalar_one_or_none()

@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import json
 import copy
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
@@ -8,6 +9,7 @@ from datetime import datetime
 
 class InstantRotatingFileHandler(RotatingFileHandler):
     """实时写入的 RotatingFileHandler，每次日志都立即 flush"""
+
     def emit(self, record):
         super().emit(record)
         self.flush()
@@ -18,13 +20,13 @@ class ColoredFormatter(logging.Formatter):
 
     # ANSI 颜色代码
     COLORS = {
-        'DEBUG': '\033[36m',     # 青色
-        'INFO': '\033[32m',      # 绿色
-        'WARNING': '\033[33m',   # 黄色
-        'ERROR': '\033[31m',     # 红色
-        'CRITICAL': '\033[35m',  # 紫色
+        "DEBUG": "\033[36m",  # 青色
+        "INFO": "\033[32m",  # 绿色
+        "WARNING": "\033[33m",  # 黄色
+        "ERROR": "\033[31m",  # 红色
+        "CRITICAL": "\033[35m",  # 紫色
     }
-    RESET = '\033[0m'
+    RESET = "\033[0m"
 
     def format(self, record):
         # 创建记录的副本，避免修改原始记录影响其他处理器
@@ -67,15 +69,12 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
     root_logger.addHandler(console_handler)
 
     # 文件处理器 - 按日期命名，实时写入，详细格式
-    log_file = os.path.join(
-        log_dir,
-        f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
-    )
+    log_file = os.path.join(log_dir, f"app_{datetime.now().strftime('%Y-%m-%d')}.log")
     file_handler = InstantRotatingFileHandler(
         log_file,
         maxBytes=10 * 1024 * 1024,  # 10MB
         backupCount=5,
-        encoding="utf-8"
+        encoding="utf-8",
     )
     file_handler.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter(file_format, datefmt=date_format)
@@ -84,19 +83,33 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
 
     # 错误日志单独文件
     error_log_file = os.path.join(
-        log_dir,
-        f"error_{datetime.now().strftime('%Y-%m-%d')}.log"
+        log_dir, f"error_{datetime.now().strftime('%Y-%m-%d')}.log"
     )
     error_handler = InstantRotatingFileHandler(
         error_log_file,
         maxBytes=10 * 1024 * 1024,  # 10MB
         backupCount=5,
-        encoding="utf-8"
+        encoding="utf-8",
     )
     error_handler.setLevel(logging.ERROR)
     error_formatter = logging.Formatter(file_format, datefmt=date_format)
     error_handler.setFormatter(error_formatter)
     root_logger.addHandler(error_handler)
+
+    # 请求/响应日志单独文件
+    request_log_file = os.path.join(
+        log_dir, f"requests_{datetime.now().strftime('%Y-%m-%d')}.log"
+    )
+    request_handler = InstantRotatingFileHandler(
+        request_log_file,
+        maxBytes=50 * 1024 * 1024,  # 50MB
+        backupCount=10,
+        encoding="utf-8",
+    )
+    request_handler.setLevel(logging.DEBUG)
+    request_formatter = logging.Formatter(file_format, datefmt=date_format)
+    request_handler.setFormatter(request_formatter)
+    root_logger.addHandler(request_handler)
 
     # 设置第三方库的日志级别
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -119,3 +132,130 @@ def get_logger(name: str) -> logging.Logger:
         Logger 实例
     """
     return logging.getLogger(name)
+
+
+def _truncate(data: str, max_length: int = 2000) -> str:
+    """Truncate string to max_length, adding ellipsis if truncated."""
+    if len(data) > max_length:
+        return data[:max_length] + " ... [truncated]"
+    return data
+
+
+def _mask_sensitive(body: dict) -> dict:
+    """Mask sensitive fields in request/response body."""
+    if not isinstance(body, dict):
+        return body
+    masked = {}
+    for key, value in body.items():
+        lower_key = key.lower()
+        if lower_key in (
+            "api_key",
+            "apikey",
+            "key",
+            "authorization",
+            "token",
+            "password",
+        ):
+            if isinstance(value, str) and len(value) > 8:
+                masked[key] = value[:4] + "****" + value[-4:]
+            else:
+                masked[key] = "****"
+        elif isinstance(value, dict):
+            masked[key] = _mask_sensitive(value)
+        elif isinstance(value, list):
+            masked[key] = [
+                _mask_sensitive(item) if isinstance(item, dict) else item
+                for item in value
+            ]
+        else:
+            masked[key] = value
+    return masked
+
+
+class RequestLogger:
+    """Helper for structured request/response logging."""
+
+    def __init__(self, logger_name: str = "bol_api.request"):
+        self.logger = logging.getLogger(logger_name)
+
+    def log_request(
+        self, endpoint: str, body: dict, api_key_id: int = None, extra: dict = None
+    ):
+        """Log incoming client request."""
+        model = body.get("model", "unknown") if isinstance(body, dict) else "unknown"
+        stream = body.get("stream", False) if isinstance(body, dict) else False
+        extra_info = f" | extra={extra}" if extra else ""
+        self.logger.info(
+            f"[REQUEST] {endpoint} | model={model} | stream={stream} | api_key_id={api_key_id}{extra_info}"
+        )
+        if body:
+            safe_body = _mask_sensitive(body)
+            body_str = json.dumps(safe_body, ensure_ascii=False, default=str)
+            self.logger.debug(f"[REQ_BODY] {_truncate(body_str)}")
+
+    def log_response(
+        self,
+        endpoint: str,
+        channel_id: int,
+        model: str,
+        status_code: int,
+        latency_ms: int,
+        tokens: int = 0,
+        body: dict = None,
+        extra: dict = None,
+    ):
+        """Log upstream response (non-streaming)."""
+        extra_info = f" | extra={extra}" if extra else ""
+        self.logger.info(
+            f"[RESPONSE] {endpoint} | channel={channel_id} | model={model} | "
+            f"status={status_code} | latency={latency_ms}ms | tokens={tokens}{extra_info}"
+        )
+        if body:
+            safe_body = _mask_sensitive(body)
+            body_str = json.dumps(safe_body, ensure_ascii=False, default=str)
+            self.logger.debug(f"[RESP_BODY] {_truncate(body_str)}")
+
+    def log_stream_start(
+        self, endpoint: str, channel_id: int, model: str, api_key_id: int = None
+    ):
+        """Log start of streaming request."""
+        self.logger.info(
+            f"[STREAM_START] {endpoint} | channel={channel_id} | model={model} | api_key_id={api_key_id}"
+        )
+
+    def log_stream_end(
+        self,
+        endpoint: str,
+        channel_id: int,
+        model: str,
+        latency_ms: int,
+        tokens: int = 0,
+    ):
+        """Log end of streaming request."""
+        self.logger.info(
+            f"[STREAM_END] {endpoint} | channel={channel_id} | model={model} | "
+            f"latency={latency_ms}ms | tokens={tokens}"
+        )
+
+    def log_error(
+        self,
+        endpoint: str,
+        channel_id: int,
+        model: str,
+        error: str,
+        error_type: str = "ERROR",
+        latency_ms: int = 0,
+    ):
+        """Log error during request processing."""
+        self.logger.error(
+            f"[{error_type}] {endpoint} | channel={channel_id} | model={model} | "
+            f"latency={latency_ms}ms | error={error}"
+        )
+
+    def log_fallback(
+        self, endpoint: str, failed_channel_id: int, model: str, reason: str
+    ):
+        """Log channel fallback attempt."""
+        self.logger.warning(
+            f"[FALLBACK] {endpoint} | failed_channel={failed_channel_id} | model={model} | reason={reason}"
+        )

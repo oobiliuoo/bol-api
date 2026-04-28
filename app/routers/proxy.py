@@ -10,9 +10,11 @@ from app.channels.manager import ChannelManager, create_provider
 from app.stats.recorder import UsageRecorder, calculate_cost
 from app.providers.openai import OpenAIProvider
 from app.providers.anthropic import AnthropicProvider
+from app.utils.logger import RequestLogger
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+request_logger = RequestLogger()
 
 # 最大重试次数（尝试不同渠道）
 MAX_FALLBACK_ATTEMPTS = 3
@@ -31,13 +33,21 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
     api_key_id = getattr(request.state, "api_key_id", None)
     start_time = time.time()
 
-    logger.info(f"Chat completion request: model={model}, stream={stream}, api_key_id={api_key_id}")
+    request_logger.log_request("/v1/chat/completions", body, api_key_id=api_key_id)
 
     # 获取所有支持该模型的渠道用于fallback
     all_channels = await ChannelManager.select_all_channels(db, model)
     if not all_channels:
-        logger.warning(f"No available channel for model: {model}")
-        raise HTTPException(status_code=400, detail=f"No available channel for model: {model}")
+        request_logger.log_error(
+            "/v1/chat/completions",
+            channel_id=None,
+            model=model,
+            error="No available channel",
+            error_type="NO_CHANNEL",
+        )
+        raise HTTPException(
+            status_code=400, detail=f"No available channel for model: {model}"
+        )
 
     # 尝试多个渠道
     failed_channels = []
@@ -45,23 +55,39 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
 
     for attempt in range(min(MAX_FALLBACK_ATTEMPTS, len(all_channels))):
         # 选择渠道（排除已失败的）
-        channel = await ChannelManager.select_channel(db, model, exclude_ids=[c.id for c in failed_channels])
+        channel = await ChannelManager.select_channel(
+            db, model, exclude_ids=[c.id for c in failed_channels]
+        )
         if not channel:
             break
 
-        logger.debug(f"Attempt {attempt + 1}: Using channel {channel.id} ({channel.name}) for model {model}")
+        request_logger.log_request(
+            f"/v1/chat/completions [attempt {attempt + 1}]",
+            body,
+            api_key_id=api_key_id,
+            extra={"channel_id": channel.id, "channel_name": channel.name},
+        )
         provider = create_provider(channel)
         if not provider.supports_model(model):
-            logger.debug(f"Channel {channel.id} does not support model {model}")
+            request_logger.log_fallback(
+                "/v1/chat/completions",
+                channel.id,
+                model,
+                reason=f"provider does not support model {model}",
+            )
             failed_channels.append(channel)
             continue
 
         try:
             if stream:
-                logger.info(f"Streaming request to channel {channel.id} ({channel.name})")
+                request_logger.log_stream_start(
+                    "/v1/chat/completions", channel.id, model, api_key_id=api_key_id
+                )
                 return StreamingResponse(
-                    stream_chat_response(provider, body, channel, api_key_id, request, failed_channels),
-                    media_type="text/event-stream"
+                    stream_chat_response(
+                        provider, body, channel, api_key_id, request, failed_channels
+                    ),
+                    media_type="text/event-stream",
                 )
             else:
                 response = await provider.chat_completion(body)
@@ -70,10 +96,20 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                 # 提取用量
                 usage = provider.extract_usage(response)
 
-                logger.info(f"Request completed: channel={channel.id}, model={model}, latency={latency_ms}ms, tokens={usage['total_tokens']}")
+                request_logger.log_response(
+                    "/v1/chat/completions",
+                    channel.id,
+                    model,
+                    status_code=200,
+                    latency_ms=latency_ms,
+                    tokens=usage["total_tokens"],
+                    body=response,
+                )
 
                 # 记录用量
-                cost = await calculate_cost(db, model, usage["request_tokens"], usage["response_tokens"])
+                cost = await calculate_cost(
+                    db, model, usage["request_tokens"], usage["response_tokens"]
+                )
                 await UsageRecorder.record(
                     api_key_id=api_key_id,
                     channel_id=channel.id,
@@ -83,23 +119,44 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                     request_tokens=usage["request_tokens"],
                     response_tokens=usage["response_tokens"],
                     cost=cost,
-                    latency_ms=latency_ms
+                    latency_ms=latency_ms,
                 )
 
                 return JSONResponse(content=response)
 
         except httpx.TimeoutException as e:
-            logger.warning(f"Channel {channel.id} timeout: {e}")
+            request_logger.log_error(
+                "/v1/chat/completions",
+                channel.id,
+                model,
+                error=str(e),
+                error_type="TIMEOUT",
+                latency_ms=int((time.time() - start_time) * 1000),
+            )
             failed_channels.append(channel)
             last_error = e
             continue  # 尝试下一个渠道
         except httpx.ConnectError as e:
-            logger.warning(f"Channel {channel.id} connection error: {e}")
+            request_logger.log_error(
+                "/v1/chat/completions",
+                channel.id,
+                model,
+                error=str(e),
+                error_type="CONNECT_ERROR",
+                latency_ms=int((time.time() - start_time) * 1000),
+            )
             failed_channels.append(channel)
             last_error = e
             continue  # 尝试下一个渠道
         except Exception as e:
-            logger.error(f"Channel {channel.id} error: {e}", exc_info=True)
+            request_logger.log_error(
+                "/v1/chat/completions",
+                channel.id,
+                model,
+                error=str(e),
+                error_type="ERROR",
+                latency_ms=int((time.time() - start_time) * 1000),
+            )
             # 非网络错误，不重试
             latency_ms = int((time.time() - start_time) * 1000)
             await UsageRecorder.record(
@@ -109,7 +166,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                 model=model,
                 endpoint="/v1/chat/completions",
                 status_code=500,
-                latency_ms=latency_ms
+                latency_ms=latency_ms,
             )
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -125,18 +182,24 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
             model=model,
             endpoint="/v1/chat/completions",
             status_code=504 if isinstance(last_error, httpx.TimeoutException) else 502,
-            latency_ms=latency_ms
+            latency_ms=latency_ms,
         )
 
     if isinstance(last_error, httpx.TimeoutException):
         raise HTTPException(status_code=504, detail="All channels timed out")
     elif isinstance(last_error, httpx.ConnectError):
-        raise HTTPException(status_code=502, detail=f"All channels failed to connect: {str(last_error)}")
+        raise HTTPException(
+            status_code=502, detail=f"All channels failed to connect: {str(last_error)}"
+        )
     else:
-        raise HTTPException(status_code=503, detail="No available channel after fallback attempts")
+        raise HTTPException(
+            status_code=503, detail="No available channel after fallback attempts"
+        )
 
 
-async def stream_chat_response(provider, body, channel, api_key_id, request, failed_channels=None):
+async def stream_chat_response(
+    provider, body, channel, api_key_id, request, failed_channels=None
+):
     """流式响应处理"""
     start_time = time.time()
     total_content = ""
@@ -172,6 +235,14 @@ async def stream_chat_response(provider, body, channel, api_key_id, request, fai
         if completion_tokens == 0:
             completion_tokens = len(total_content) // 4
 
+        request_logger.log_stream_end(
+            "/v1/chat/completions",
+            channel.id,
+            model,
+            latency_ms=latency_ms,
+            tokens=prompt_tokens + completion_tokens,
+        )
+
         # 在流结束后使用新的session记录用量
         async with async_session() as db:
             cost = await calculate_cost(db, model, prompt_tokens, completion_tokens)
@@ -184,12 +255,21 @@ async def stream_chat_response(provider, body, channel, api_key_id, request, fai
                 request_tokens=prompt_tokens,
                 response_tokens=completion_tokens,
                 cost=cost,
-                latency_ms=latency_ms
+                latency_ms=latency_ms,
             )
 
     except Exception as e:
         error_msg = str(e)
         latency_ms = int((time.time() - start_time) * 1000)
+
+        request_logger.log_error(
+            "/v1/chat/completions",
+            channel.id,
+            model,
+            error=error_msg,
+            error_type="STREAM_ERROR",
+            latency_ms=latency_ms,
+        )
 
         # 记录失败请求
         async with async_session() as db:
@@ -200,7 +280,7 @@ async def stream_chat_response(provider, body, channel, api_key_id, request, fai
                 model=model,
                 endpoint="/v1/chat/completions",
                 status_code=500,
-                latency_ms=latency_ms
+                latency_ms=latency_ms,
             )
 
         # 发送标准OpenAI格式的错误事件
@@ -222,10 +302,21 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
     api_key_id = getattr(request.state, "api_key_id", None)
     start_time = time.time()
 
+    request_logger.log_request("/v1/messages", body, api_key_id=api_key_id)
+
     # 获取所有支持该模型的渠道用于fallback
     all_channels = await ChannelManager.select_all_channels(db, model)
     if not all_channels:
-        raise HTTPException(status_code=400, detail=f"No available channel for model: {model}")
+        request_logger.log_error(
+            "/v1/messages",
+            channel_id=None,
+            model=model,
+            error="No available channel",
+            error_type="NO_CHANNEL",
+        )
+        raise HTTPException(
+            status_code=400, detail=f"No available channel for model: {model}"
+        )
 
     # 尝试多个渠道
     failed_channels = []
@@ -233,27 +324,59 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
 
     for attempt in range(min(MAX_FALLBACK_ATTEMPTS, len(all_channels))):
         # 选择渠道（排除已失败的）
-        channel = await ChannelManager.select_channel(db, model, exclude_ids=[c.id for c in failed_channels])
+        channel = await ChannelManager.select_channel(
+            db, model, exclude_ids=[c.id for c in failed_channels]
+        )
         if not channel:
             break
 
+        request_logger.log_request(
+            f"/v1/messages [attempt {attempt + 1}]",
+            body,
+            api_key_id=api_key_id,
+            extra={"channel_id": channel.id, "channel_name": channel.name},
+        )
         provider = create_provider(channel)
         if not provider.supports_model(model):
+            request_logger.log_fallback(
+                "/v1/messages",
+                channel.id,
+                model,
+                reason=f"provider does not support model {model}",
+            )
             failed_channels.append(channel)
             continue
 
         try:
             if stream:
+                request_logger.log_stream_start(
+                    "/v1/messages", channel.id, model, api_key_id=api_key_id
+                )
                 return StreamingResponse(
-                    stream_anthropic_response(provider, body, channel, api_key_id, request),
-                    media_type="text/event-stream"
+                    stream_anthropic_response(
+                        provider, body, channel, api_key_id, request
+                    ),
+                    media_type="text/event-stream",
                 )
             else:
                 response = await provider.chat_completion(body)
                 latency_ms = int((time.time() - start_time) * 1000)
 
                 usage = provider.extract_usage(response)
-                cost = await calculate_cost(db, model, usage["request_tokens"], usage["response_tokens"])
+
+                request_logger.log_response(
+                    "/v1/messages",
+                    channel.id,
+                    model,
+                    status_code=200,
+                    latency_ms=latency_ms,
+                    tokens=usage["total_tokens"],
+                    body=response,
+                )
+
+                cost = await calculate_cost(
+                    db, model, usage["request_tokens"], usage["response_tokens"]
+                )
                 await UsageRecorder.record(
                     api_key_id=api_key_id,
                     channel_id=channel.id,
@@ -263,20 +386,44 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                     request_tokens=usage["request_tokens"],
                     response_tokens=usage["response_tokens"],
                     cost=cost,
-                    latency_ms=latency_ms
+                    latency_ms=latency_ms,
                 )
 
                 return JSONResponse(content=response)
 
         except httpx.TimeoutException as e:
+            request_logger.log_error(
+                "/v1/messages",
+                channel.id,
+                model,
+                error=str(e),
+                error_type="TIMEOUT",
+                latency_ms=int((time.time() - start_time) * 1000),
+            )
             failed_channels.append(channel)
             last_error = e
             continue  # 尝试下一个渠道
         except httpx.ConnectError as e:
+            request_logger.log_error(
+                "/v1/messages",
+                channel.id,
+                model,
+                error=str(e),
+                error_type="CONNECT_ERROR",
+                latency_ms=int((time.time() - start_time) * 1000),
+            )
             failed_channels.append(channel)
             last_error = e
             continue  # 尝试下一个渠道
         except Exception as e:
+            request_logger.log_error(
+                "/v1/messages",
+                channel.id,
+                model,
+                error=str(e),
+                error_type="ERROR",
+                latency_ms=int((time.time() - start_time) * 1000),
+            )
             # 非网络错误，不重试
             latency_ms = int((time.time() - start_time) * 1000)
             await UsageRecorder.record(
@@ -286,7 +433,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                 model=model,
                 endpoint="/v1/messages",
                 status_code=500,
-                latency_ms=latency_ms
+                latency_ms=latency_ms,
             )
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -302,15 +449,19 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
             model=model,
             endpoint="/v1/messages",
             status_code=504 if isinstance(last_error, httpx.TimeoutException) else 502,
-            latency_ms=latency_ms
+            latency_ms=latency_ms,
         )
 
     if isinstance(last_error, httpx.TimeoutException):
         raise HTTPException(status_code=504, detail="All channels timed out")
     elif isinstance(last_error, httpx.ConnectError):
-        raise HTTPException(status_code=502, detail=f"All channels failed to connect: {str(last_error)}")
+        raise HTTPException(
+            status_code=502, detail=f"All channels failed to connect: {str(last_error)}"
+        )
     else:
-        raise HTTPException(status_code=503, detail="No available channel after fallback attempts")
+        raise HTTPException(
+            status_code=503, detail="No available channel after fallback attempts"
+        )
 
 
 async def stream_anthropic_response(provider, body, channel, api_key_id, request):
@@ -330,7 +481,7 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
             if line.startswith("data:"):
                 try:
                     # 跳过"data:"或"data: "，添加长度检查防止越界
-                    if len(line) > 5 and line[5] == '{':
+                    if len(line) > 5 and line[5] == "{":
                         json_str = line[5:]
                     elif len(line) > 6:
                         json_str = line[6:]
@@ -361,6 +512,14 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
         if output_tokens == 0:
             output_tokens = len(total_content) // 4
 
+        request_logger.log_stream_end(
+            "/v1/messages",
+            channel.id,
+            model,
+            latency_ms=latency_ms,
+            tokens=input_tokens + output_tokens,
+        )
+
         # 在流结束后使用新的session记录用量
         async with async_session() as db:
             cost = await calculate_cost(db, model, input_tokens, output_tokens)
@@ -373,12 +532,21 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
                 request_tokens=input_tokens,
                 response_tokens=output_tokens,
                 cost=cost,
-                latency_ms=latency_ms
+                latency_ms=latency_ms,
             )
 
     except Exception as e:
         error_msg = str(e)
         latency_ms = int((time.time() - start_time) * 1000)
+
+        request_logger.log_error(
+            "/v1/messages",
+            channel.id,
+            model,
+            error=error_msg,
+            error_type="STREAM_ERROR",
+            latency_ms=latency_ms,
+        )
 
         # 记录失败请求
         async with async_session() as db:
@@ -389,12 +557,12 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
                 model=model,
                 endpoint="/v1/messages",
                 status_code=500,
-                latency_ms=latency_ms
+                latency_ms=latency_ms,
             )
 
         # 发送标准Anthropic格式的错误事件
         error_data = {
             "type": "error",
-            "error": {"type": "internal_error", "message": error_msg}
+            "error": {"type": "internal_error", "message": error_msg},
         }
         yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
