@@ -15,6 +15,7 @@ class ChannelCreate(BaseModel):
 
 class ChannelUpdate(BaseModel):
     name: Optional[str] = None
+    provider_type: Optional[str] = None
     api_protocol: Optional[str] = None
     base_url: Optional[str] = None
     api_key: Optional[str] = None

@@ -1,8 +1,11 @@
 import hashlib
+import logging
 from fastapi import Request
 from starlette.responses import JSONResponse
 from app.db.database import async_session
 from app.db.crud import get_api_key_by_hash
+
+logger = logging.getLogger(__name__)
 
 
 def setup_auth_middleware(app):
@@ -56,11 +59,13 @@ def setup_auth_middleware(app):
         async with async_session() as session:
             api_key = await get_api_key_by_hash(session, key_hash)
             if not api_key:
+                logger.warning(f"Authentication failed: invalid API key for path {path}")
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid API key"}
                 )
             if not api_key.is_active:
+                logger.warning(f"Authentication failed: disabled API key {api_key.id} for path {path}")
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "API key is disabled"}
@@ -69,6 +74,7 @@ def setup_auth_middleware(app):
             # 注入API Key信息到请求状态
             request.state.api_key_id = api_key.id
             request.state.api_key_name = api_key.name
+            logger.debug(f"API key {api_key.id} ({api_key.name}) authenticated for {path}")
 
         return await call_next(request)
 

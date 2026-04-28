@@ -73,3 +73,12 @@ Configure in `.env`:
 - `/admin` - Web management interface
 - `/stats/summary` - Usage statistics summary
 - `/stats/logs` - Detailed usage logs
+
+## Development Rules
+
+**Restart Server After Changes**: The server runs without `--reload` flag, so code changes require manual restart. After modifying any code file, restart the server to apply changes.
+
+**Test After Code Changes**: Every code modification must be verified by testing. After making changes:
+1. Restart the server to apply changes
+2. Test the affected functionality (API endpoint, admin UI, etc.)
+3. Verify the expected behavior before reporting completion

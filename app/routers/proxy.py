@@ -1,6 +1,7 @@
 import time
 import json
 import httpx
+import logging
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,7 @@ from app.providers.openai import OpenAIProvider
 from app.providers.anthropic import AnthropicProvider
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # 最大重试次数（尝试不同渠道）
 MAX_FALLBACK_ATTEMPTS = 3
@@ -29,9 +31,12 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
     api_key_id = getattr(request.state, "api_key_id", None)
     start_time = time.time()
 
+    logger.info(f"Chat completion request: model={model}, stream={stream}, api_key_id={api_key_id}")
+
     # 获取所有支持该模型的渠道用于fallback
     all_channels = await ChannelManager.select_all_channels(db, model)
     if not all_channels:
+        logger.warning(f"No available channel for model: {model}")
         raise HTTPException(status_code=400, detail=f"No available channel for model: {model}")
 
     # 尝试多个渠道
@@ -44,13 +49,16 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
         if not channel:
             break
 
+        logger.debug(f"Attempt {attempt + 1}: Using channel {channel.id} ({channel.name}) for model {model}")
         provider = create_provider(channel)
         if not provider.supports_model(model):
+            logger.debug(f"Channel {channel.id} does not support model {model}")
             failed_channels.append(channel)
             continue
 
         try:
             if stream:
+                logger.info(f"Streaming request to channel {channel.id} ({channel.name})")
                 return StreamingResponse(
                     stream_chat_response(provider, body, channel, api_key_id, request, failed_channels),
                     media_type="text/event-stream"
@@ -61,6 +69,8 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
 
                 # 提取用量
                 usage = provider.extract_usage(response)
+
+                logger.info(f"Request completed: channel={channel.id}, model={model}, latency={latency_ms}ms, tokens={usage['total_tokens']}")
 
                 # 记录用量
                 cost = await calculate_cost(db, model, usage["request_tokens"], usage["response_tokens"])
@@ -79,14 +89,17 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                 return JSONResponse(content=response)
 
         except httpx.TimeoutException as e:
+            logger.warning(f"Channel {channel.id} timeout: {e}")
             failed_channels.append(channel)
             last_error = e
             continue  # 尝试下一个渠道
         except httpx.ConnectError as e:
+            logger.warning(f"Channel {channel.id} connection error: {e}")
             failed_channels.append(channel)
             last_error = e
             continue  # 尝试下一个渠道
         except Exception as e:
+            logger.error(f"Channel {channel.id} error: {e}", exc_info=True)
             # 非网络错误，不重试
             latency_ms = int((time.time() - start_time) * 1000)
             await UsageRecorder.record(

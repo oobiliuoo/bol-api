@@ -1,5 +1,6 @@
 import asyncio
 import warnings
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,14 +10,22 @@ from app.db.database import init_db
 from app.auth.middleware import setup_auth_middleware
 from app.stats.recorder import UsageRecorder
 from app.routers import proxy, keys, stats, admin
+from app.utils.logger import setup_logging, get_logger
 import os
+
+# 初始化日志系统
+setup_logging(log_dir="logs", log_level="INFO")
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动时初始化
+    logger.info("Starting bol-api server...")
     await init_db()
+    logger.info("Database initialized")
     UsageRecorder.init()
+    logger.info("Usage recorder initialized")
     # 启动用量记录后台任务
     task = asyncio.create_task(UsageRecorder.process_queue())
 
@@ -26,15 +35,20 @@ async def lifespan(app: FastAPI):
             "WARNING: Using default ENCRYPTION_KEY. Set a secure key in production!",
             UserWarning
         )
+        logger.warning("Using default ENCRYPTION_KEY. Set a secure key in production!")
     if settings.jwt_secret == "default_jwt_secret_change_in_production!":
         warnings.warn(
             "WARNING: Using default JWT_SECRET. Set a secure key in production!",
             UserWarning
         )
+        logger.warning("Using default JWT_SECRET. Set a secure key in production!")
+
+    logger.info("bol-api server started successfully")
 
     yield
 
     # 关闭时清理
+    logger.info("Shutting down bol-api server...")
     task.cancel()
     try:
         await task  # 等待任务真正取消
@@ -43,6 +57,7 @@ async def lifespan(app: FastAPI):
 
     from app.utils.http_client import AsyncHttpClient
     await AsyncHttpClient.close()
+    logger.info("bol-api server shutdown complete")
 
 
 app = FastAPI(

@@ -100,7 +100,7 @@ async def get_channel_by_id(session: AsyncSession, channel_id: int) -> Optional[
 
 
 # 渠道可更新字段白名单
-CHANNEL_UPDATE_FIELDS = {"name", "api_protocol", "base_url", "api_key", "models", "is_active", "priority", "weight"}
+CHANNEL_UPDATE_FIELDS = {"name", "provider_type", "api_protocol", "base_url", "api_key", "models", "is_active", "priority", "weight"}
 
 
 async def update_channel(session: AsyncSession, channel_id: int, **kwargs) -> Optional[Channel]:
