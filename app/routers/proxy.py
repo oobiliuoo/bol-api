@@ -11,6 +11,7 @@ from app.stats.recorder import UsageRecorder, calculate_cost
 from app.providers.openai import OpenAIProvider
 from app.providers.anthropic import AnthropicProvider
 from app.utils.logger import RequestLogger
+from app.utils.tokenizer import count_tokens, count_message_tokens
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -231,9 +232,11 @@ async def stream_chat_response(
         # 流式完成后记录用量
         latency_ms = int((time.time() - start_time) * 1000)
 
-        # 如果没有从 usage 中获取到 token 数，用内容长度估算
+        # If upstream did not provide usage, estimate tokens accurately
+        if prompt_tokens == 0:
+            prompt_tokens = count_message_tokens(body.get("messages", []), model)
         if completion_tokens == 0:
-            completion_tokens = len(total_content) // 4
+            completion_tokens = count_tokens(total_content, model)
 
         request_logger.log_stream_end(
             "/v1/chat/completions",
@@ -509,8 +512,11 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
                     pass  # JSON解析失败，跳过此行
 
         latency_ms = int((time.time() - start_time) * 1000)
+        # If upstream did not provide usage, estimate tokens accurately
+        if input_tokens == 0:
+            input_tokens = count_message_tokens(body.get("messages", []), model)
         if output_tokens == 0:
-            output_tokens = len(total_content) // 4
+            output_tokens = count_tokens(total_content, model)
 
         request_logger.log_stream_end(
             "/v1/messages",
