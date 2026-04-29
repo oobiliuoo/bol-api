@@ -189,6 +189,30 @@ body::after {
     letter-spacing: 1px;
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.btn-logout {
+    background: transparent;
+    border: 1px solid var(--accent-error);
+    color: var(--accent-error);
+    padding: 8px 16px;
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: 1px;
+}
+
+.btn-logout:hover {
+    background: rgba(255, 51, 85, 0.1);
+    box-shadow: 0 0 15px rgba(255, 51, 85, 0.3);
+}
+
 .status-dot {
     width: 10px;
     height: 10px;

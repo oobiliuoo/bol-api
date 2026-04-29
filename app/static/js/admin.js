@@ -6,7 +6,13 @@ if (!token) {
 }
 const headers = {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'};
 
-// 处理 401 响应
+// 登出功能
+function logout() {
+    localStorage.removeItem('admin_token');
+    window.location.href = '/admin/login';
+}
+
+// 处理 401 响应 - token 过期自动跳转登录
 async function fetchWithAuth(url, options = {}) {
     const res = await fetch(url, {...options, headers: {...headers, ...options.headers}});
     if (res.status === 401) {
@@ -16,9 +22,26 @@ async function fetchWithAuth(url, options = {}) {
     return res;
 }
 
+// 检查 token 是否有效
+async function checkAuth() {
+    try {
+        const res = await fetchWithAuth('/admin/channels');
+        if (res.status === 401) {
+            return false;
+        }
+        return true;
+    } catch (e) {
+        console.error('Auth check failed:', e);
+        return false;
+    }
+}
+
+// 页面加载时检查认证
+checkAuth();
+
 // Stats
 async function loadStats() {
-    const res = await fetch('/stats/summary', {headers});
+    const res = await fetchWithAuth('/stats/summary');
     const data = await res.json();
 
     const avgTokens = data.total_requests > 0 ? Math.round(data.total_tokens / data.total_requests) : 0;
@@ -95,7 +118,7 @@ function formatDate(s) {
 
 // Keys
 async function loadKeys() {
-    const res = await fetch('/admin/keys', {headers});
+    const res = await fetchWithAuth('/admin/keys');
     const keys = await res.json();
     const tbody = document.querySelector('#keys-table tbody');
 
@@ -147,7 +170,7 @@ async function toggleKeyVisibility(id) {
     const currentText = displayEl.textContent;
 
     if (currentText.includes('...')) {
-        const res = await fetch(`/admin/keys/${id}/reveal`, {headers});
+        const res = await fetchWithAuth(`/admin/keys/${id}/reveal`);
         const data = await res.json();
         if (data.key) {
             displayEl.textContent = data.key;
@@ -155,7 +178,7 @@ async function toggleKeyVisibility(id) {
             toggleBtn.textContent = '隐藏';
         }
     } else {
-        const res = await fetch('/admin/keys', {headers});
+        const res = await fetchWithAuth('/admin/keys');
         const keys = await res.json();
         const k = keys.find(k => k.id === id);
         displayEl.textContent = k.key_prefix || 'bol-xxx...';
@@ -165,7 +188,7 @@ async function toggleKeyVisibility(id) {
 }
 
 async function copyFullKey(id) {
-    const res = await fetch(`/admin/keys/${id}/reveal`, {headers});
+    const res = await fetchWithAuth(`/admin/keys/${id}/reveal`);
     const data = await res.json();
     if (data.key) {
         navigator.clipboard.writeText(data.key);
@@ -194,7 +217,7 @@ function closeKeyModal() {
 
 async function createKey() {
     const name = document.getElementById('key-name').value;
-    const res = await fetch('/admin/keys', {method: 'POST', headers, body: JSON.stringify({name})});
+    const res = await fetchWithAuth('/admin/keys', {method: 'POST', body: JSON.stringify({name})});
     const data = await res.json();
 
     document.getElementById('key-value').textContent = data.key;
@@ -210,20 +233,20 @@ function copyKey() {
 }
 
 async function toggleKey(id, isActive) {
-    await fetch(`/admin/keys/${id}?is_active=${isActive}`, {method: 'PATCH', headers});
+    await fetchWithAuth(`/admin/keys/${id}?is_active=${isActive}`, {method: 'PATCH'});
     loadKeys();
 }
 
 async function deleteKey(id) {
     if (confirm('确定删除此 API 密钥？此操作不可恢复。')) {
-        await fetch(`/admin/keys/${id}`, {method: 'DELETE', headers});
+        await fetchWithAuth(`/admin/keys/${id}`, {method: 'DELETE'});
         loadKeys();
     }
 }
 
 // Channels
 async function loadChannels() {
-    const res = await fetch('/admin/channels', {headers});
+    const res = await fetchWithAuth('/admin/channels');
     const channels = await res.json();
     const tbody = document.querySelector('#channels-table tbody');
 
@@ -299,7 +322,7 @@ async function editChannel(id) {
     document.getElementById('channel-modal').classList.add('show');
     document.getElementById('modal-title').textContent = '编辑渠道';
 
-    const res = await fetch('/admin/channels', {headers});
+    const res = await fetchWithAuth('/admin/channels');
     const channels = await res.json();
     const c = channels.find(c => c.id === id);
 
@@ -357,9 +380,8 @@ async function fetchModels() {
     statusDiv.textContent = '正在拉取模型列表...';
 
     try {
-        const res = await fetch('/admin/channels/fetch-models', {
+        const res = await fetchWithAuth('/admin/channels/fetch-models', {
             method: 'POST',
-            headers,
             body: JSON.stringify({
                 base_url: baseUrl,
                 api_key: apiKey,
@@ -426,15 +448,13 @@ async function saveChannel() {
     }
 
     if (editingChannelId) {
-        await fetch(`/admin/channels/${editingChannelId}`, {
+        await fetchWithAuth(`/admin/channels/${editingChannelId}`, {
             method: 'PATCH',
-            headers,
             body: JSON.stringify(data)
         });
     } else {
-        await fetch('/admin/channels', {
+        await fetchWithAuth('/admin/channels', {
             method: 'POST',
-            headers,
             body: JSON.stringify(data)
         });
     }
@@ -443,9 +463,8 @@ async function saveChannel() {
 }
 
 async function toggleChannel(id, is_active) {
-    await fetch(`/admin/channels/${id}/toggle`, {
+    await fetchWithAuth(`/admin/channels/${id}/toggle`, {
         method: 'POST',
-        headers,
         body: JSON.stringify({is_active})
     });
     loadChannels();
@@ -453,7 +472,7 @@ async function toggleChannel(id, is_active) {
 
 async function deleteChannel(id) {
     if (confirm('确定删除此渠道？')) {
-        await fetch(`/admin/channels/${id}`, {method: 'DELETE', headers});
+        await fetchWithAuth(`/admin/channels/${id}`, {method: 'DELETE'});
         loadChannels();
     }
 }
@@ -462,7 +481,7 @@ async function deleteChannel(id) {
 let editingPriceId = null;
 
 async function loadPrices() {
-    const res = await fetch('/admin/prices', {headers});
+    const res = await fetchWithAuth('/admin/prices');
     const prices = await res.json();
     const tbody = document.querySelector('#prices-table tbody');
 
@@ -517,7 +536,7 @@ async function editPrice(id) {
     document.getElementById('price-modal').classList.add('show');
     document.getElementById('price-modal-title').textContent = '编辑模型价格';
 
-    const res = await fetch('/admin/prices', {headers});
+    const res = await fetchWithAuth('/admin/prices');
     const prices = await res.json();
     const p = prices.find(p => p.id === id);
 
@@ -550,15 +569,13 @@ async function savePrice() {
     };
 
     if (editingPriceId) {
-        await fetch(`/admin/prices/${editingPriceId}`, {
+        await fetchWithAuth(`/admin/prices/${editingPriceId}`, {
             method: 'PATCH',
-            headers,
             body: JSON.stringify(data)
         });
     } else {
-        await fetch('/admin/prices', {
+        await fetchWithAuth('/admin/prices', {
             method: 'POST',
-            headers,
             body: JSON.stringify(data)
         });
     }
@@ -567,9 +584,8 @@ async function savePrice() {
 }
 
 async function togglePrice(id, is_active) {
-    await fetch(`/admin/prices/${id}/toggle`, {
+    await fetchWithAuth(`/admin/prices/${id}/toggle`, {
         method: 'POST',
-        headers,
         body: JSON.stringify({is_active})
     });
     loadPrices();
@@ -577,7 +593,7 @@ async function togglePrice(id, is_active) {
 
 async function deletePrice(id) {
     if (confirm('确定删除此价格配置？')) {
-        await fetch(`/admin/prices/${id}`, {method: 'DELETE', headers});
+        await fetchWithAuth(`/admin/prices/${id}`, {method: 'DELETE'});
         loadPrices();
     }
 }
@@ -600,7 +616,7 @@ async function loadModelStats(hours) {
 
     document.getElementById('model-stats-period').textContent = hours < 24 ? `${hours}时` : `${hours / 24}天`;
 
-    const res = await fetch(`/stats/models?hours=${hours}`, {headers});
+    const res = await fetchWithAuth(`/stats/models?hours=${hours}`);
     const data = await res.json();
 
     const container = document.getElementById('model-stats-container');
@@ -734,9 +750,8 @@ async function testChannel(id) {
     latencyCell.innerHTML = '<span style="color: var(--text-muted); font-family: JetBrains Mono; font-size: 12px;">...</span>';
 
     try {
-        const res = await fetch(`/admin/channels/${id}/test`, {
-            method: 'POST',
-            headers: headers
+        const res = await fetchWithAuth(`/admin/channels/${id}/test`, {
+            method: 'POST'
         });
         const data = await res.json();
 

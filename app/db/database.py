@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
@@ -31,6 +32,30 @@ engine = create_async_engine(
     }
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@asynccontextmanager
+async def get_safe_session():
+    """安全的数据库会话上下文管理器，确保连接正确关闭"""
+    session = None
+    try:
+        session = async_session()
+        yield session
+        await session.commit()
+    except Exception:
+        if session:
+            try:
+                await session.rollback()
+            except Exception:
+                pass
+        raise
+    finally:
+        if session:
+            try:
+                await session.close()
+            except Exception:
+                pass
+
 
 Base = declarative_base()
 

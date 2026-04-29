@@ -3,7 +3,7 @@ import logging
 import asyncio
 from fastapi import Request
 from starlette.responses import JSONResponse
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, InvalidRequestError
 from app.db.database import async_session
 from app.db.crud import get_api_key_by_hash
 
@@ -57,23 +57,39 @@ def setup_auth_middleware(app):
             )
         key_hash = hashlib.sha256(token.encode()).hexdigest()
 
-        # 验证API Key，带重试机制
+        # 验证API Key，带重试机制和安全的连接管理
         max_retries = 3
         api_key = None
-        for attempt in range(max_retries):
-            try:
-                async with async_session() as session:
+        session = None
+        try:
+            for attempt in range(max_retries):
+                try:
+                    session = async_session()
                     api_key = await get_api_key_by_hash(session, key_hash)
                     break  # 成功则跳出重试循环
-            except OperationalError as e:
-                if "database is locked" in str(e) and attempt < max_retries - 1:
-                    await asyncio.sleep(0.1 * (attempt + 1))
-                    continue
-                logger.error(f"Database error during auth: {e}")
-                return JSONResponse(
-                    status_code=503,
-                    content={"detail": "Service temporarily unavailable"}
-                )
+                except OperationalError as e:
+                    if "database is locked" in str(e) and attempt < max_retries - 1:
+                        await asyncio.sleep(0.1 * (attempt + 1))
+                        continue
+                    logger.error(f"Database error during auth: {e}")
+                    return JSONResponse(
+                        status_code=503,
+                        content={"detail": "Service temporarily unavailable"}
+                    )
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    # 请求被取消或超时，直接返回错误
+                    logger.warning(f"Request cancelled during auth for path {path}")
+                    return JSONResponse(
+                        status_code=499,
+                        content={"detail": "Request cancelled"}
+                    )
+        finally:
+            # 确保连接被正确关闭
+            if session is not None:
+                try:
+                    await session.close()
+                except Exception:
+                    pass  # 忽略关闭时的错误
 
         if not api_key:
             logger.warning(f"Authentication failed: invalid API key for path {path}")

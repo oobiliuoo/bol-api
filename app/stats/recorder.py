@@ -44,7 +44,7 @@ class UsageRecorder:
 
     @classmethod
     async def process_queue(cls):
-        """处理队列中的用量记录，带重试机制"""
+        """处理队列中的用量记录，带重试机制和安全的连接管理"""
         if cls._queue is None:
             return
 
@@ -54,20 +54,40 @@ class UsageRecorder:
 
                 # 重试机制：最多重试 3 次
                 max_retries = 3
+                last_error = None
                 for attempt in range(max_retries):
+                    session = None
                     try:
-                        async with async_session() as session:
-                            await create_usage_log(session, **data)
+                        session = async_session()
+                        await create_usage_log(session, **data)
+                        await session.commit()
                         break  # 成功则跳出重试循环
                     except OperationalError as e:
+                        last_error = e
                         if "database is locked" in str(e) and attempt < max_retries - 1:
                             # 数据库锁定，等待后重试
-                            await asyncio.sleep(0.5 * (attempt + 1))  # 递增等待时间
+                            await asyncio.sleep(0.5 * (attempt + 1))
                             continue
-                        raise  # 其他错误或最后一次重试失败，抛出异常
+                        logger.error(f"Database error recording usage: {e}")
+                    except asyncio.CancelledError:
+                        logger.info("Usage recorder cancelled during write")
+                        raise
+                    except Exception as e:
+                        logger.error(f"Unexpected error recording usage: {e}")
+                        last_error = e
+                    finally:
+                        if session:
+                            try:
+                                await session.close()
+                            except Exception:
+                                pass
 
             except asyncio.TimeoutError:
                 continue
+            except asyncio.CancelledError:
+                # 队列处理任务被取消，优雅退出
+                logger.info("Usage recorder queue processing cancelled")
+                raise
             except Exception as e:
                 logger.error(f"Error recording usage: {e}")
 
