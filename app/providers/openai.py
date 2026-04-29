@@ -2,6 +2,7 @@ from typing import Dict, Any, AsyncIterator, List
 import json
 from app.providers.base import BaseProvider
 from app.utils.http_client import AsyncHttpClient
+from app.utils.sanitize import sanitize_request
 
 
 class OpenAIProvider(BaseProvider):
@@ -16,6 +17,7 @@ class OpenAIProvider(BaseProvider):
         headers = self.get_headers()
 
         # 确保stream=False
+        request = sanitize_request(request, "openai")
         request["stream"] = False
 
         response = await AsyncHttpClient.post(url, headers, request)
@@ -27,6 +29,7 @@ class OpenAIProvider(BaseProvider):
         headers = self.get_headers()
 
         # 确保stream=True
+        request = sanitize_request(request, "openai")
         request["stream"] = True
 
         async for line in AsyncHttpClient.post_stream(url, headers, request):

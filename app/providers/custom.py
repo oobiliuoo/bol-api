@@ -4,6 +4,7 @@ from app.providers.base import BaseProvider
 from app.providers.openai import OpenAIProvider
 from app.providers.anthropic import AnthropicProvider
 from app.utils.http_client import AsyncHttpClient
+from app.utils.sanitize import sanitize_request
 
 
 class CustomProvider(BaseProvider):
@@ -30,6 +31,7 @@ class CustomProvider(BaseProvider):
     async def chat_completion(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """根据协议类型发送不同格式的请求"""
         headers = self.get_headers()
+        request = sanitize_request(request, "custom")
         request["stream"] = False
 
         if self.api_protocol == "anthropic":
@@ -46,6 +48,7 @@ class CustomProvider(BaseProvider):
     async def stream_chat_completion(self, request: Dict[str, Any]) -> AsyncIterator[str]:
         """流式请求"""
         headers = self.get_headers()
+        request = sanitize_request(request, "custom")
         request["stream"] = True
 
         if self.api_protocol == "anthropic":
