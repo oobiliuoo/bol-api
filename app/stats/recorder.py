@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import OperationalError
 from app.db.database import async_session
 from app.db.crud import create_usage_log, get_model_price
 
@@ -43,15 +44,28 @@ class UsageRecorder:
 
     @classmethod
     async def process_queue(cls):
-        """处理队列中的用量记录"""
+        """处理队列中的用量记录，带重试机制"""
         if cls._queue is None:
             return
 
         while True:
             try:
                 data = await asyncio.wait_for(cls._queue.get(), timeout=1.0)
-                async with async_session() as session:
-                    await create_usage_log(session, **data)
+
+                # 重试机制：最多重试 3 次
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        async with async_session() as session:
+                            await create_usage_log(session, **data)
+                        break  # 成功则跳出重试循环
+                    except OperationalError as e:
+                        if "database is locked" in str(e) and attempt < max_retries - 1:
+                            # 数据库锁定，等待后重试
+                            await asyncio.sleep(0.5 * (attempt + 1))  # 递增等待时间
+                            continue
+                        raise  # 其他错误或最后一次重试失败，抛出异常
+
             except asyncio.TimeoutError:
                 continue
             except Exception as e:

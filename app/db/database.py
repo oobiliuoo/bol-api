@@ -11,7 +11,25 @@ db_dir = os.path.dirname(db_path)
 if db_dir and not os.path.exists(db_dir):
     os.makedirs(db_dir)
 
-engine = create_async_engine(settings.database_url, echo=False)
+# SQLite 优化配置：
+# - timeout: 增加锁等待时间到 30 秒
+# - check_same_thread: 允许多线程访问
+# - pool_size: 连接池大小
+# - max_overflow: 允许超出 pool_size 的连接数
+# - pool_timeout: 获取连接的超时时间
+# - pool_recycle: 连接回收时间（秒）
+engine = create_async_engine(
+    settings.database_url,
+    echo=False,
+    pool_size=5,
+    max_overflow=10,
+    pool_timeout=30,
+    pool_recycle=1800,
+    connect_args={
+        "timeout": 30,
+        "check_same_thread": False,
+    }
+)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 Base = declarative_base()
@@ -19,6 +37,15 @@ Base = declarative_base()
 
 async def init_db():
     async with engine.begin() as conn:
+        # 启用 WAL 模式 - 允许读写并发
+        await conn.execute(text("PRAGMA journal_mode=WAL"))
+        # 设置 busy_timeout - 等待锁释放的时间（毫秒）
+        await conn.execute(text("PRAGMA busy_timeout=30000"))
+        # 启用同步模式 - NORMAL 比 FULL 性能更好，安全性足够
+        await conn.execute(text("PRAGMA synchronous=NORMAL"))
+        # 设置缓存大小 - 负数表示 KB，正数表示页数
+        await conn.execute(text("PRAGMA cache_size=-64000"))  # 64MB
+
         await conn.run_sync(Base.metadata.create_all)
 
         # 为现有表添加索引（如果不存在）
