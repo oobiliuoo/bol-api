@@ -148,15 +148,17 @@ async function loadKeys() {
                 </div>
             </td>
             <td>
-                <span class="badge ${k.is_active ? 'badge-active' : 'badge-disabled'}">
-                    <span class="badge-dot"></span>
-                    ${k.is_active ? '启用' : '禁用'}
-                </span>
+                <div class="status-row">
+                    <span class="badge ${k.is_active ? 'badge-active' : 'badge-disabled'}">
+                        <span class="badge-dot"></span>
+                        ${k.is_active ? '启用' : '禁用'}
+                    </span>
+                    <button class="btn btn-sm ${k.is_active ? '' : 'btn-primary'}" style="${k.is_active ? 'border-color: var(--border); color: var(--text-muted);' : ''}" onclick="toggleKey(${k.id}, ${!k.is_active})">${k.is_active ? '禁用' : '启用'}</button>
+                </div>
             </td>
             <td><span style="font-family: 'JetBrains Mono'; font-size: 12px; color: var(--text-muted);">${formatDate(k.created_at)}</span></td>
             <td>
                 <div class="action-btns">
-                    <button class="btn ${k.is_active ? '' : 'btn-primary'}" style="${k.is_active ? 'border-color: var(--border); color: var(--text-muted);' : ''}" onclick="toggleKey(${k.id}, ${!k.is_active})">${k.is_active ? '禁用' : '启用'}</button>
                     <button class="btn btn-danger" onclick="deleteKey(${k.id})">删除</button>
                 </div>
             </td>
@@ -279,17 +281,19 @@ async function loadChannels() {
                 </div>
             </td>
             <td>
-                <span class="badge ${c.is_active ? 'badge-active' : 'badge-disabled'}">
-                    <span class="badge-dot"></span>
-                    ${c.is_active ? '启用' : '禁用'}
-                </span>
+                <div class="status-row">
+                    <span class="badge ${c.is_active ? 'badge-active' : 'badge-disabled'}">
+                        <span class="badge-dot"></span>
+                        ${c.is_active ? '启用' : '禁用'}
+                    </span>
+                    <button class="btn btn-sm ${c.is_active ? '' : 'btn-primary'}" style="${c.is_active ? 'border-color: var(--border); color: var(--text-muted);' : ''}" onclick="toggleChannel(${c.id}, ${!c.is_active})">${c.is_active ? '禁用' : '启用'}</button>
+                </div>
             </td>
             <td id="latency-${c.id}">
                 <span style="color: var(--text-muted); font-family: 'JetBrains Mono'; font-size: 12px;">—</span>
             </td>
             <td>
                 <div class="action-btns">
-                    <button class="btn ${c.is_active ? '' : 'btn-primary'}" style="${c.is_active ? 'border-color: var(--border); color: var(--text-muted);' : ''}" onclick="toggleChannel(${c.id}, ${!c.is_active})">${c.is_active ? '禁用' : '启用'}</button>
                     <button class="btn" style="border-color: rgba(0, 217, 255, 0.3); color: var(--accent);" onclick="testChannel(${c.id})" id="test-btn-${c.id}">测试</button>
                     <button class="btn" style="border-color: var(--border);" onclick="editChannel(${c.id})">编辑</button>
                     <button class="btn btn-danger" onclick="deleteChannel(${c.id})">删除</button>
@@ -520,14 +524,16 @@ async function loadPrices() {
             <td style="font-family: 'JetBrains Mono';">$${p.input_price.toFixed(2)}/M</td>
             <td style="font-family: 'JetBrains Mono';">$${p.output_price.toFixed(2)}/M</td>
             <td>
-                <span class="badge ${p.is_active ? 'badge-active' : 'badge-disabled'}">
-                    <span class="badge-dot"></span>
-                    ${p.is_active ? '启用' : '禁用'}
-                </span>
+                <div class="status-row">
+                    <span class="badge ${p.is_active ? 'badge-active' : 'badge-disabled'}">
+                        <span class="badge-dot"></span>
+                        ${p.is_active ? '启用' : '禁用'}
+                    </span>
+                    <button class="btn btn-sm ${p.is_active ? '' : 'btn-primary'}" style="${p.is_active ? 'border-color: var(--border); color: var(--text-muted);' : ''}" onclick="togglePrice(${p.id}, ${!p.is_active})">${p.is_active ? '禁用' : '启用'}</button>
+                </div>
             </td>
             <td>
                 <div class="action-btns">
-                    <button class="btn ${p.is_active ? '' : 'btn-primary'}" style="${p.is_active ? 'border-color: var(--border); color: var(--text-muted);' : ''}" onclick="togglePrice(${p.id}, ${!p.is_active})">${p.is_active ? '禁用' : '启用'}</button>
                     <button class="btn" style="border-color: var(--border);" onclick="editPrice(${p.id})">编辑</button>
                     <button class="btn btn-danger" onclick="deletePrice(${p.id})">删除</button>
                 </div>
