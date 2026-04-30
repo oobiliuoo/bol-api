@@ -6,6 +6,9 @@ from app.utils.sanitize import sanitize_request
 
 
 class OpenAIProvider(BaseProvider):
+    def __init__(self, base_url: str, api_key: str, models: List[str]):
+        super().__init__(base_url, api_key, models, api_protocol="openai")
+
     def get_headers(self) -> dict:
         return {
             "Authorization": f"Bearer {self.api_key}",

@@ -177,13 +177,13 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label>提供商类型</label>
-                        <select id="channel-type">
+                        <select id="channel-type" onchange="onChannelTypeChange()">
                             <option value="openai">OpenAI</option>
                             <option value="anthropic">Anthropic</option>
                             <option value="custom">自定义</option>
                         </select>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" id="protocol-group">
                         <label>API 协议</label>
                         <select id="channel-protocol">
                             <option value="openai">OpenAI 格式</option>

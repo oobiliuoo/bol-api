@@ -1,5 +1,6 @@
 import random
 import time
+import logging
 from typing import Optional, List, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.crud import get_active_channels, get_channel_by_id
@@ -8,6 +9,8 @@ from app.providers.base import BaseProvider
 from app.providers.openai import OpenAIProvider
 from app.providers.anthropic import AnthropicProvider
 from app.providers.custom import CustomProvider
+
+logger = logging.getLogger(__name__)
 
 
 class ChannelCache:
@@ -61,11 +64,18 @@ def create_provider(channel: Channel) -> BaseProvider:
             models=channel.models or []
         )
     else:  # custom
+        effective_protocol = channel.api_protocol or "openai"
+        if not channel.api_protocol:
+            logger.warning(
+                f"Channel '{channel.name}' (id={channel.id}) has NULL api_protocol, "
+                f"defaulting to '{effective_protocol}'. "
+                f"Set api_protocol explicitly to avoid ambiguity."
+            )
         return CustomProvider(
             base_url=channel.base_url,
             api_key=channel.api_key,
             models=channel.models or [],
-            api_protocol=channel.api_protocol or "openai"
+            api_protocol=effective_protocol
         )
 
 
@@ -102,6 +112,15 @@ class ChannelManager:
         return False
 
     @staticmethod
+    def _get_effective_protocol(channel: Channel) -> str:
+        if channel.provider_type == "openai":
+            return "openai"
+        elif channel.provider_type == "anthropic":
+            return "anthropic"
+        else:  # custom
+            return channel.api_protocol or "openai"
+
+    @staticmethod
     def _select_by_weight(channels: List[Channel]) -> Channel:
         """根据权重随机选择渠道（加权随机）"""
         total_weight = sum(c.weight for c in channels)
@@ -119,7 +138,7 @@ class ChannelManager:
         return channels[-1]
 
     @staticmethod
-    async def select_channel(session: AsyncSession, model: str, exclude_ids: List[int] = None) -> Optional[Channel]:
+    async def select_channel(session: AsyncSession, model: str, exclude_ids: List[int] = None, protocol: Optional[str] = None) -> Optional[Channel]:
         """根据模型选择合适的渠道
 
         调度策略：
@@ -136,6 +155,13 @@ class ChannelManager:
             c for c in channels
             if ChannelManager._match_model(c, model) and c.id not in exclude_ids
         ]
+
+        # 如果指定了协议，按协议过滤
+        if protocol is not None:
+            matching_channels = [
+                c for c in matching_channels
+                if ChannelManager._get_effective_protocol(c) == protocol
+            ]
 
         if not matching_channels:
             return None
@@ -156,13 +182,20 @@ class ChannelManager:
         return ChannelManager._select_by_weight(top_group)
 
     @staticmethod
-    async def select_all_channels(session: AsyncSession, model: str) -> List[Channel]:
+    async def select_all_channels(session: AsyncSession, model: str, protocol: Optional[str] = None) -> List[Channel]:
         """获取所有支持该模型的渠道（用于fallback）
 
         返回按优先级降序排列的渠道列表
         """
         channels = await ChannelManager._get_cached_channels(session)
         matching_channels = [c for c in channels if ChannelManager._match_model(c, model)]
+
+        # 如果指定了协议，按协议过滤
+        if protocol is not None:
+            matching_channels = [
+                c for c in matching_channels
+                if ChannelManager._get_effective_protocol(c) == protocol
+            ]
         # 按优先级降序排序
         matching_channels.sort(key=lambda c: c.priority, reverse=True)
         return matching_channels

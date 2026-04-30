@@ -3,10 +3,11 @@ from typing import AsyncIterator, Dict, Any, List
 
 
 class BaseProvider(ABC):
-    def __init__(self, base_url: str, api_key: str, models: List[str]):
+    def __init__(self, base_url: str, api_key: str, models: List[str], api_protocol: str = "openai"):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.models = models
+        self.api_protocol = api_protocol
 
     @abstractmethod
     async def chat_completion(self, request: Dict[str, Any]) -> Dict[str, Any]:

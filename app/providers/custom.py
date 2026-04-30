@@ -11,7 +11,7 @@ class CustomProvider(BaseProvider):
     """自定义渠道适配器，支持OpenAI和Anthropic两种协议格式"""
 
     def __init__(self, base_url: str, api_key: str, models: List[str], api_protocol: str = "openai"):
-        super().__init__(base_url, api_key, models)
+        super().__init__(base_url, api_key, models, api_protocol=api_protocol)
         self.api_protocol = api_protocol
 
     def get_headers(self) -> dict:

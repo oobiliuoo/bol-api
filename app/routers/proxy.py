@@ -37,7 +37,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
     request_logger.log_request("/v1/chat/completions", body, api_key_id=api_key_id)
 
     # 获取所有支持该模型的渠道用于fallback
-    all_channels = await ChannelManager.select_all_channels(db, model)
+    all_channels = await ChannelManager.select_all_channels(db, model, protocol="openai")
     if not all_channels:
         request_logger.log_error(
             "/v1/chat/completions",
@@ -57,7 +57,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
     for attempt in range(min(MAX_FALLBACK_ATTEMPTS, len(all_channels))):
         # 选择渠道（排除已失败的）
         channel = await ChannelManager.select_channel(
-            db, model, exclude_ids=[c.id for c in failed_channels]
+            db, model, exclude_ids=[c.id for c in failed_channels], protocol="openai"
         )
         if not channel:
             break
@@ -336,7 +336,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
     request_logger.log_request("/v1/messages", body, api_key_id=api_key_id)
 
     # 获取所有支持该模型的渠道用于fallback
-    all_channels = await ChannelManager.select_all_channels(db, model)
+    all_channels = await ChannelManager.select_all_channels(db, model, protocol="anthropic")
     if not all_channels:
         request_logger.log_error(
             "/v1/messages",
@@ -356,7 +356,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
     for attempt in range(min(MAX_FALLBACK_ATTEMPTS, len(all_channels))):
         # 选择渠道（排除已失败的）
         channel = await ChannelManager.select_channel(
-            db, model, exclude_ids=[c.id for c in failed_channels]
+            db, model, exclude_ids=[c.id for c in failed_channels], protocol="anthropic"
         )
         if not channel:
             break
@@ -628,3 +628,4 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
             "error": {"type": "internal_error", "message": error_msg},
         }
         yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
+        yield "data: [DONE]\n\n"

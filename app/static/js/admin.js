@@ -312,9 +312,22 @@ function showChannelModal() {
     document.getElementById('key-status').style.display = 'none';
     document.getElementById('channel-models').value = '';
     document.getElementById('channel-priority').value = '1';
-    document.getElementById('channel-protocol').value = 'openai';
     document.getElementById('channel-type').value = 'custom';
+    document.getElementById('channel-protocol').value = 'openai';
     document.getElementById('fetch-models-status').style.display = 'none';
+    onChannelTypeChange();
+}
+
+function onChannelTypeChange() {
+    const type = document.getElementById('channel-type').value;
+    const protocolGroup = document.getElementById('protocol-group');
+    const protocolSelect = document.getElementById('channel-protocol');
+    if (type === 'custom') {
+        protocolGroup.style.display = '';
+    } else {
+        protocolGroup.style.display = 'none';
+        protocolSelect.value = type;
+    }
 }
 
 async function editChannel(id) {
@@ -348,6 +361,7 @@ async function editChannel(id) {
         document.getElementById('channel-models').value = c.models.join(', ');
         document.getElementById('channel-priority').value = c.priority;
         document.getElementById('fetch-models-status').style.display = 'none';
+        onChannelTypeChange();
     }
 }
 
