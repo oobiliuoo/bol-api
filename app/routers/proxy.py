@@ -149,6 +149,34 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
             failed_channels.append(channel)
             last_error = e
             continue  # 尝试下一个渠道
+        except httpx.HTTPStatusError as e:
+            # 上游返回4xx/5xx，提取响应体中的具体错误信息
+            detail = e.response.text if e.response else str(e)
+            status_code = e.response.status_code if e.response else 500
+            latency_ms = int((time.time() - start_time) * 1000)
+            request_logger.log_error(
+                "/v1/chat/completions",
+                channel.id,
+                model,
+                error=f"HTTP {status_code}: {detail}",
+                error_type="UPSTREAM_ERROR",
+                latency_ms=latency_ms,
+            )
+            # 4xx错误不重试（请求本身有问题，换渠道也一样）
+            if status_code >= 500:
+                failed_channels.append(channel)
+                last_error = e
+                continue
+            await UsageRecorder.record(
+                api_key_id=api_key_id,
+                channel_id=channel.id,
+                provider=channel.provider_type,
+                model=model,
+                endpoint="/v1/chat/completions",
+                status_code=status_code,
+                latency_ms=latency_ms,
+            )
+            raise HTTPException(status_code=status_code, detail=detail)
         except Exception as e:
             request_logger.log_error(
                 "/v1/chat/completions",
@@ -418,6 +446,34 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
             failed_channels.append(channel)
             last_error = e
             continue  # 尝试下一个渠道
+        except httpx.HTTPStatusError as e:
+            # 上游返回4xx/5xx，提取响应体中的具体错误信息
+            detail = e.response.text if e.response else str(e)
+            status_code = e.response.status_code if e.response else 500
+            latency_ms = int((time.time() - start_time) * 1000)
+            request_logger.log_error(
+                "/v1/messages",
+                channel.id,
+                model,
+                error=f"HTTP {status_code}: {detail}",
+                error_type="UPSTREAM_ERROR",
+                latency_ms=latency_ms,
+            )
+            # 4xx错误不重试（请求本身有问题，换渠道也一样）
+            if status_code >= 500:
+                failed_channels.append(channel)
+                last_error = e
+                continue
+            await UsageRecorder.record(
+                api_key_id=api_key_id,
+                channel_id=channel.id,
+                provider=channel.provider_type,
+                model=model,
+                endpoint="/v1/messages",
+                status_code=status_code,
+                latency_ms=latency_ms,
+            )
+            raise HTTPException(status_code=status_code, detail=detail)
         except Exception as e:
             request_logger.log_error(
                 "/v1/messages",

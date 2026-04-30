@@ -74,6 +74,10 @@ Configure in `.env`:
 - `/stats/summary` - Usage statistics summary
 - `/stats/logs` - Detailed usage logs
 
+## Test API Key
+
+- `bol-0mrhR4QicoNTOfW2MwRxZJJlVhKM4vME3dXE2w` — 用于开发和测试
+
 ## Development Rules
 
 **Restart Server After Changes**: The server runs without `--reload` flag, so code changes require manual restart. After modifying any code file, restart the server to apply changes.
