@@ -39,71 +39,138 @@ async function checkAuth() {
 // 页面加载时检查认证
 checkAuth();
 
+// ============ Toast 通知系统 ============
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    const icons = { success: '✓', error: '✗', warning: '⚠', info: '●' };
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `<span class="toast-icon">${icons[type] || '●'}</span> ${message}`;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.animation = 'toastOut 0.3s ease-in forwards';
+        setTimeout(() => toast.remove(), 300);
+    }, 3500);
+}
+
+// ============ 确认对话框 ============
+let confirmCallback = null;
+
+function showConfirm(title, message, cb) {
+    confirmCallback = cb;
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-msg').textContent = message;
+    document.getElementById('confirm-overlay').classList.add('show');
+}
+
+function confirmCancel() {
+    confirmCallback = null;
+    document.getElementById('confirm-overlay').classList.remove('show');
+}
+
+function confirmOk() {
+    document.getElementById('confirm-overlay').classList.remove('show');
+    if (confirmCallback) {
+        confirmCallback();
+        confirmCallback = null;
+    }
+}
+
+// 点击遮罩取消确认
+document.getElementById('confirm-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) confirmCancel();
+});
+
+// ============ 加载状态管理 ============
+function showTableLoading(tbody, columns) {
+    const rows = Array.from({ length: 4 }, () => {
+        const row = document.createElement('tr');
+        row.className = 'skeleton-row';
+        const td = document.createElement('td');
+        td.colSpan = columns;
+        row.appendChild(td);
+        return row;
+    });
+    tbody.innerHTML = '';
+    rows.forEach(r => tbody.appendChild(r));
+    tbody.dataset.loading = 'true';
+}
+
+function hideTableLoading(tbody) {
+    tbody.dataset.loading = '';
+}
+
+// ============ Escape 关闭模态框 ============
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+        document.getElementById('confirm-overlay').classList.remove('show');
+    }
+});
+
 // Stats
 async function loadStats() {
-    const res = await fetchWithAuth('/stats/summary');
-    const data = await res.json();
+    try {
+        const res = await fetchWithAuth('/stats/summary');
+        if (!res.ok) { showToast('加载统计数据失败', 'error'); return; }
+        const data = await res.json();
 
-    const avgTokens = data.total_requests > 0 ? Math.round(data.total_tokens / data.total_requests) : 0;
-    const avgCost = data.total_requests > 0 ? (data.total_cost / data.total_requests).toFixed(4) : '0.0000';
+        const avgTokens = data.total_requests > 0 ? Math.round(data.total_tokens / data.total_requests) : 0;
+        const avgCost = data.total_requests > 0 ? (data.total_cost / data.total_requests).toFixed(4) : '0.0000';
 
-    document.getElementById('stats').innerHTML = `
-        <div class="stat-card">
-            <div class="stat-icon">📊</div>
-            <div class="stat-content">
-                <div class="stat-value">${data.total_requests}</div>
-                <div class="stat-label">总请求次数</div>
-                <div class="stat-detail">已追踪 ${data.days} 天</div>
+        document.getElementById('stats').innerHTML = `
+            <div class="stat-card">
+                <div class="stat-icon">📊</div>
+                <div class="stat-content">
+                    <div class="stat-value">${data.total_requests}</div>
+                    <div class="stat-label">总请求次数</div>
+                    <div class="stat-detail">已追踪 ${data.days} 天</div>
+                </div>
             </div>
-            <div class="stat-mini-chart">
-                <div class="mini-bar" style="height: ${Math.random() * 30 + 2}px;"></div>
-                <div class="mini-bar" style="height: ${Math.random() * 30 + 2}px;"></div>
-                <div class="mini-bar" style="height: ${Math.random() * 30 + 2}px;"></div>
-                <div class="mini-bar" style="height: ${Math.random() * 30 + 2}px;"></div>
-                <div class="mini-bar" style="height: ${Math.random() * 30 + 2}px;"></div>
+            <div class="stat-card">
+                <div class="stat-icon">🔢</div>
+                <div class="stat-content">
+                    <div class="stat-value">${formatNumber(data.total_tokens)}</div>
+                    <div class="stat-label">Tokens 消耗</div>
+                    <div class="stat-detail">平均 ${avgTokens} tokens/请求</div>
+                </div>
             </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">🔢</div>
-            <div class="stat-content">
-                <div class="stat-value">${formatNumber(data.total_tokens)}</div>
-                <div class="stat-label">Tokens 消耗</div>
-                <div class="stat-detail">平均 ${avgTokens} tokens/请求</div>
+            <div class="stat-card">
+                <div class="stat-icon">💰</div>
+                <div class="stat-content">
+                    <div class="stat-value">$${data.total_cost.toFixed(4)}</div>
+                    <div class="stat-label">预估费用</div>
+                    <div class="stat-detail">平均 $${avgCost}/请求</div>
+                </div>
             </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">💰</div>
-            <div class="stat-content">
-                <div class="stat-value">$${data.total_cost.toFixed(4)}</div>
-                <div class="stat-label">预估费用</div>
-                <div class="stat-detail">平均 $${avgCost}/请求</div>
+            <div class="stat-card">
+                <div class="stat-icon">⚡</div>
+                <div class="stat-content">
+                    <div class="stat-value">${data.rpm}</div>
+                    <div class="stat-label">RPM</div>
+                    <div class="stat-detail">每分钟请求数</div>
+                </div>
             </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">⚡</div>
-            <div class="stat-content">
-                <div class="stat-value">${data.rpm}</div>
-                <div class="stat-label">RPM</div>
-                <div class="stat-detail">每分钟请求数</div>
+            <div class="stat-card">
+                <div class="stat-icon">📝</div>
+                <div class="stat-content">
+                    <div class="stat-value">${formatNumber(data.tpm)}</div>
+                    <div class="stat-label">TPM</div>
+                    <div class="stat-detail">每分钟 Token 数</div>
+                </div>
             </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">📝</div>
-            <div class="stat-content">
-                <div class="stat-value">${formatNumber(data.tpm)}</div>
-                <div class="stat-label">TPM</div>
-                <div class="stat-detail">每分钟 Token 数</div>
+            <div class="stat-card">
+                <div class="stat-icon">📈</div>
+                <div class="stat-content">
+                    <div class="stat-value">${data.days}</div>
+                    <div class="stat-label">追踪天数</div>
+                    <div class="stat-detail">日均 ${Math.round(data.total_requests / data.days)} 次请求</div>
+                </div>
             </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">📈</div>
-            <div class="stat-content">
-                <div class="stat-value">${data.days}</div>
-                <div class="stat-label">追踪天数</div>
-                <div class="stat-detail">日均 ${Math.round(data.total_requests / data.days)} 次请求</div>
-            </div>
-        </div>
-    `;
+        `;
+    } catch (e) {
+        showToast('加载统计数据失败: ' + e.message, 'error');
+    }
 }
 
 function formatNumber(n) {
@@ -118,52 +185,58 @@ function formatDate(s) {
 
 // Keys
 async function loadKeys() {
-    const res = await fetchWithAuth('/admin/keys');
-    const keys = await res.json();
     const tbody = document.querySelector('#keys-table tbody');
+    showTableLoading(tbody, 6);
 
-    if (keys.length === 0) {
-        tbody.innerHTML = `
+    try {
+        const res = await fetchWithAuth('/admin/keys');
+        if (!res.ok) { showToast('加载密钥失败', 'error'); hideTableLoading(tbody); return; }
+        const keys = await res.json();
+        hideTableLoading(tbody);
+
+        if (keys.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🔑</div>
+                            <div>暂无 API 密钥，请创建一个开始使用</div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = keys.map(k => `
             <tr>
-                <td colspan="6">
-                    <div class="empty-state">
-                        <div class="empty-state-icon">🔑</div>
-                        <div>暂无 API 密钥，请创建一个开始使用</div>
+                <td><span class="font-mono text-muted">#${k.id}</span></td>
+                <td>${k.name || '<span class="text-muted">—</span>'}</td>
+                <td>
+                    <div class="key-actions">
+                        <span class="font-mono-sm text-muted" id="key-display-${k.id}">${k.key_prefix || 'bol-xxx...'}</span>
+                        <button class="btn btn-sm" onclick="toggleKeyVisibility(${k.id})" id="key-toggle-${k.id}">显示</button>
+                        <button class="btn btn-sm" onclick="copyFullKey(${k.id})" id="key-copy-${k.id}">复制</button>
+                    </div>
+                </td>
+                <td>
+                    <span class="toggle-switch ${k.is_active ? 'active' : ''}" onclick="toggleKey(${k.id}, ${!k.is_active})">
+                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                        <span class="toggle-label">${k.is_active ? '启用' : '禁用'}</span>
+                    </span>
+                </td>
+                <td><span class="font-mono-sm text-muted">${formatDate(k.created_at)}</span></td>
+                <td>
+                    <div class="action-btns">
+                        <button class="btn btn-danger" onclick="deleteKey(${k.id})">删除</button>
                     </div>
                 </td>
             </tr>
-        `;
-        return;
+        `).join('');
+    } catch (e) {
+        hideTableLoading(tbody);
+        showToast('加载密钥失败: ' + e.message, 'error');
     }
-
-    tbody.innerHTML = keys.map(k => `
-        <tr>
-            <td><span style="font-family: 'JetBrains Mono'; color: var(--text-muted);">#${k.id}</span></td>
-            <td>${k.name || '<span style="color: var(--text-muted)">—</span>'}</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="font-family: 'JetBrains Mono'; font-size: 12px; color: var(--text-muted);" id="key-display-${k.id}">${k.key_prefix || 'bol-xxx...'}</span>
-                    <button class="btn" style="padding: 4px 8px; font-size: 11px; border-color: var(--border);" onclick="toggleKeyVisibility(${k.id})" id="key-toggle-${k.id}">显示</button>
-                    <button class="btn" style="padding: 4px 8px; font-size: 11px; border-color: var(--border);" onclick="copyFullKey(${k.id})" id="key-copy-${k.id}">复制</button>
-                </div>
-            </td>
-            <td>
-                <div class="status-row">
-                    <span class="badge ${k.is_active ? 'badge-active' : 'badge-disabled'}">
-                        <span class="badge-dot"></span>
-                        ${k.is_active ? '启用' : '禁用'}
-                    </span>
-                    <button class="btn btn-sm ${k.is_active ? '' : 'btn-primary'}" style="${k.is_active ? 'border-color: var(--border); color: var(--text-muted);' : ''}" onclick="toggleKey(${k.id}, ${!k.is_active})">${k.is_active ? '禁用' : '启用'}</button>
-                </div>
-            </td>
-            <td><span style="font-family: 'JetBrains Mono'; font-size: 12px; color: var(--text-muted);">${formatDate(k.created_at)}</span></td>
-            <td>
-                <div class="action-btns">
-                    <button class="btn btn-danger" onclick="deleteKey(${k.id})">删除</button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
 }
 
 async function toggleKeyVisibility(id) {
@@ -235,72 +308,84 @@ function copyKey() {
 }
 
 async function toggleKey(id, isActive) {
-    await fetchWithAuth(`/admin/keys/${id}?is_active=${isActive}`, {method: 'PATCH'});
-    loadKeys();
+    const action = isActive ? '启用' : '禁用';
+    showConfirm(`${action}密钥`, `确定${action}此 API 密钥？`, async () => {
+        await fetchWithAuth(`/admin/keys/${id}?is_active=${isActive}`, {method: 'PATCH'});
+        showToast(`密钥已${action}`, 'success');
+        loadKeys();
+    });
 }
 
 async function deleteKey(id) {
-    if (confirm('确定删除此 API 密钥？此操作不可恢复。')) {
+    showConfirm('删除 API 密钥', '确定删除此 API 密钥？此操作不可恢复。', async () => {
         await fetchWithAuth(`/admin/keys/${id}`, {method: 'DELETE'});
+        showToast('密钥已删除', 'success');
         loadKeys();
-    }
+    });
 }
 
 // Channels
 async function loadChannels() {
-    const res = await fetchWithAuth('/admin/channels');
-    const channels = await res.json();
     const tbody = document.querySelector('#channels-table tbody');
+    showTableLoading(tbody, 7);
 
-    if (channels.length === 0) {
-        tbody.innerHTML = `
+    try {
+        const res = await fetchWithAuth('/admin/channels');
+        if (!res.ok) { showToast('加载渠道失败', 'error'); hideTableLoading(tbody); return; }
+        const channels = await res.json();
+        hideTableLoading(tbody);
+
+        if (channels.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📡</div>
+                            <div>暂无渠道配置，请添加一个以启用 API 代理</div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = channels.map(c => `
             <tr>
-                <td colspan="7">
-                        <div class="empty-state-icon">📡</div>
-                        <div>暂无渠道配置，请添加一个以启用 API 代理</div>
+                <td><span class="font-mono text-muted">#${c.id}</span></td>
+                <td>${c.name}</td>
+                <td>
+                    <span class="provider-badge provider-${c.api_protocol || 'openai'}">${c.api_protocol || 'openai'}</span>
+                </td>
+                <td>
+                    <div class="model-tags">
+                        ${c.models.length > 0
+                            ? c.models.map(m => `<span class="model-tag">${m}</span>`).join('')
+                            : '<span class="text-muted">全部</span>'
+                        }
+                    </div>
+                </td>
+                <td>
+                    <span class="toggle-switch ${c.is_active ? 'active' : ''}" onclick="toggleChannel(${c.id}, ${!c.is_active})">
+                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                        <span class="toggle-label">${c.is_active ? '启用' : '禁用'}</span>
+                    </span>
+                </td>
+                <td id="latency-${c.id}">
+                    <span class="font-mono-sm text-muted">—</span>
+                </td>
+                <td>
+                    <div class="action-btns">
+                        <button class="btn btn-sm btn-test" onclick="testChannel(${c.id})" id="test-btn-${c.id}">测试</button>
+                        <button class="btn btn-sm btn-edit" onclick="editChannel(${c.id})">编辑</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteChannel(${c.id})">删除</button>
                     </div>
                 </td>
             </tr>
-        `;
-        return;
+        `).join('');
+    } catch (e) {
+        hideTableLoading(tbody);
+        showToast('加载渠道失败: ' + e.message, 'error');
     }
-
-    tbody.innerHTML = channels.map(c => `
-        <tr>
-            <td><span style="font-family: 'JetBrains Mono'; color: var(--text-muted);">#${c.id}</span></td>
-            <td>${c.name}</td>
-            <td>
-                <span class="provider-badge provider-${c.api_protocol || 'openai'}">${c.api_protocol || 'openai'}</span>
-            </td>
-            <td>
-                <div class="model-tags">
-                    ${c.models.length > 0
-                        ? c.models.map(m => `<span class="model-tag">${m}</span>`).join('')
-                        : '<span style="color: var(--text-muted);">全部</span>'
-                    }
-                </div>
-            </td>
-            <td>
-                <div class="status-row">
-                    <span class="badge ${c.is_active ? 'badge-active' : 'badge-disabled'}">
-                        <span class="badge-dot"></span>
-                        ${c.is_active ? '启用' : '禁用'}
-                    </span>
-                    <button class="btn btn-sm ${c.is_active ? '' : 'btn-primary'}" style="${c.is_active ? 'border-color: var(--border); color: var(--text-muted);' : ''}" onclick="toggleChannel(${c.id}, ${!c.is_active})">${c.is_active ? '禁用' : '启用'}</button>
-                </div>
-            </td>
-            <td id="latency-${c.id}">
-                <span style="color: var(--text-muted); font-family: 'JetBrains Mono'; font-size: 12px;">—</span>
-            </td>
-            <td>
-                <div class="action-btns">
-                    <button class="btn" style="border-color: rgba(0, 217, 255, 0.3); color: var(--accent);" onclick="testChannel(${c.id})" id="test-btn-${c.id}">测试</button>
-                    <button class="btn" style="border-color: var(--border);" onclick="editChannel(${c.id})">编辑</button>
-                    <button class="btn btn-danger" onclick="deleteChannel(${c.id})">删除</button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
 }
 
 let editingChannelId = null;
@@ -316,7 +401,7 @@ function showChannelModal() {
     document.getElementById('key-status').style.display = 'none';
     document.getElementById('channel-models').value = '';
     document.getElementById('channel-priority').value = '1';
-    document.getElementById('channel-type').value = 'custom';
+    document.getElementById('channel-type').value = 'openai';
     document.getElementById('channel-protocol').value = 'openai';
     document.getElementById('fetch-models-status').style.display = 'none';
     onChannelTypeChange();
@@ -442,104 +527,134 @@ function closeChannelModal() {
 }
 
 async function saveChannel() {
-    const models = document.getElementById('channel-models').value.split(',').map(m => m.trim()).filter(m => m);
-    const data = {
-        name: document.getElementById('channel-name').value,
-        provider_type: document.getElementById('channel-type').value,
-        api_protocol: document.getElementById('channel-protocol').value,
-        base_url: document.getElementById('channel-url').value,
-        api_key: document.getElementById('channel-apikey').value,
-        models: models,
-        priority: parseInt(document.getElementById('channel-priority').value) || 1
-    };
+    const saveBtn = document.querySelector('#channel-modal .btn-primary');
+    saveBtn.disabled = true;
+    saveBtn.textContent = '保存中...';
+    saveBtn.style.opacity = '0.6';
 
-    if (!data.name || !data.base_url) {
-        alert('请填写必填字段');
-        return;
-    }
+    try {
+        const models = document.getElementById('channel-models').value.split(',').map(m => m.trim()).filter(m => m);
+        const data = {
+            name: document.getElementById('channel-name').value,
+            provider_type: document.getElementById('channel-type').value,
+            api_protocol: document.getElementById('channel-protocol').value,
+            base_url: document.getElementById('channel-url').value,
+            api_key: document.getElementById('channel-apikey').value,
+            models: models,
+            priority: parseInt(document.getElementById('channel-priority').value) || 1
+        };
 
-    if (editingChannelId && !data.api_key) {
-        delete data.api_key;
-    } else if (!editingChannelId && !data.api_key) {
-        alert('新渠道必须填写 API 密钥');
-        return;
-    }
+        if (!data.name || !data.base_url) {
+            showToast('请填写渠道名称和基础 URL', 'warning');
+            saveBtn.disabled = false;
+            saveBtn.textContent = '保存';
+            saveBtn.style.opacity = '1';
+            return;
+        }
 
-    if (editingChannelId) {
-        await fetchWithAuth(`/admin/channels/${editingChannelId}`, {
-            method: 'PATCH',
-            body: JSON.stringify(data)
-        });
-    } else {
-        await fetchWithAuth('/admin/channels', {
-            method: 'POST',
-            body: JSON.stringify(data)
-        });
+        if (editingChannelId && !data.api_key) {
+            delete data.api_key;
+        } else if (!editingChannelId && !data.api_key) {
+            showToast('新渠道必须填写 API 密钥', 'warning');
+            saveBtn.disabled = false;
+            saveBtn.textContent = '保存';
+            saveBtn.style.opacity = '1';
+            return;
+        }
+
+        if (editingChannelId) {
+            await fetchWithAuth(`/admin/channels/${editingChannelId}`, {
+                method: 'PATCH',
+                body: JSON.stringify(data)
+            });
+        } else {
+            await fetchWithAuth('/admin/channels', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        }
+        closeChannelModal();
+        showToast(editingChannelId ? '渠道已更新' : '渠道已创建', 'success');
+        loadChannels();
+    } catch (e) {
+        showToast('保存失败: ' + e.message, 'error');
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存';
+        saveBtn.style.opacity = '1';
     }
-    closeChannelModal();
-    loadChannels();
 }
 
 async function toggleChannel(id, is_active) {
-    await fetchWithAuth(`/admin/channels/${id}/toggle`, {
-        method: 'POST',
-        body: JSON.stringify({is_active})
+    const action = is_active ? '启用' : '禁用';
+    showConfirm(`${action}渠道`, `确定${action}此渠道？`, async () => {
+        await fetchWithAuth(`/admin/channels/${id}/toggle`, {
+            method: 'POST',
+            body: JSON.stringify({is_active})
+        });
+        showToast(`渠道已${action}`, 'success');
+        loadChannels();
     });
-    loadChannels();
 }
 
 async function deleteChannel(id) {
-    if (confirm('确定删除此渠道？')) {
+    showConfirm('删除渠道', '确定删除此渠道？此操作不可恢复。', async () => {
         await fetchWithAuth(`/admin/channels/${id}`, {method: 'DELETE'});
+        showToast('渠道已删除', 'success');
         loadChannels();
-    }
+    });
 }
 
 // Prices
 let editingPriceId = null;
 
 async function loadPrices() {
-    const res = await fetchWithAuth('/admin/prices');
-    const prices = await res.json();
     const tbody = document.querySelector('#prices-table tbody');
+    showTableLoading(tbody, 6);
 
-    if (prices.length === 0) {
-        tbody.innerHTML = `
+    try {
+        const res = await fetchWithAuth('/admin/prices');
+        if (!res.ok) { showToast('加载价格数据失败', 'error'); hideTableLoading(tbody); return; }
+        const prices = await res.json();
+        hideTableLoading(tbody);
+
+        if (prices.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">💰</div>
+                            <div>暂无价格配置，请添加模型价格以计算费用</div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = prices.map(p => `
             <tr>
-                <td colspan="6">
-                    <div style="text-align: center; padding: 40px; color: var(--text-muted);">
-                        <div class="empty-state-icon">💰</div>
-                        <div>暂无价格配置，请添加模型价格以计算费用</div>
+                <td><span class="font-mono text-muted">#${p.id}</span></td>
+                <td class="font-mono">${p.model}</td>
+                <td class="font-mono">$${p.input_price.toFixed(2)}/M</td>
+                <td class="font-mono">$${p.output_price.toFixed(2)}/M</td>
+                <td>
+                    <span class="toggle-switch ${p.is_active ? 'active' : ''}" onclick="togglePrice(${p.id}, ${!p.is_active})">
+                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                        <span class="toggle-label">${p.is_active ? '启用' : '禁用'}</span>
+                    </span>
+                </td>
+                <td>
+                    <div class="action-btns">
+                        <button class="btn btn-sm btn-edit" onclick="editPrice(${p.id})">编辑</button>
+                        <button class="btn btn-sm btn-danger" onclick="deletePrice(${p.id})">删除</button>
                     </div>
                 </td>
             </tr>
-        `;
-        return;
+        `).join('');
+    } catch (e) {
+        hideTableLoading(tbody);
+        showToast('加载价格数据失败: ' + e.message, 'error');
     }
-
-    tbody.innerHTML = prices.map(p => `
-        <tr>
-            <td><span style="font-family: 'JetBrains Mono'; color: var(--text-muted);">#${p.id}</span></td>
-            <td style="font-family: 'JetBrains Mono';">${p.model}</td>
-            <td style="font-family: 'JetBrains Mono';">$${p.input_price.toFixed(2)}/M</td>
-            <td style="font-family: 'JetBrains Mono';">$${p.output_price.toFixed(2)}/M</td>
-            <td>
-                <div class="status-row">
-                    <span class="badge ${p.is_active ? 'badge-active' : 'badge-disabled'}">
-                        <span class="badge-dot"></span>
-                        ${p.is_active ? '启用' : '禁用'}
-                    </span>
-                    <button class="btn btn-sm ${p.is_active ? '' : 'btn-primary'}" style="${p.is_active ? 'border-color: var(--border); color: var(--text-muted);' : ''}" onclick="togglePrice(${p.id}, ${!p.is_active})">${p.is_active ? '禁用' : '启用'}</button>
-                </div>
-            </td>
-            <td>
-                <div class="action-btns">
-                    <button class="btn" style="border-color: var(--border);" onclick="editPrice(${p.id})">编辑</button>
-                    <button class="btn btn-danger" onclick="deletePrice(${p.id})">删除</button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
 }
 
 function showPriceModal() {
@@ -573,49 +688,64 @@ function closePriceModal() {
 }
 
 async function savePrice() {
-    const model = document.getElementById('price-model').value.trim();
-    const inputPrice = parseFloat(document.getElementById('price-input').value) || 0;
-    const outputPrice = parseFloat(document.getElementById('price-output').value) || 0;
+    const saveBtn = document.querySelector('#price-modal .btn-primary');
+    saveBtn.disabled = true;
+    saveBtn.textContent = '保存中...';
+    saveBtn.style.opacity = '0.6';
 
-    if (!model) {
-        alert('请填写模型名称');
-        return;
+    try {
+        const model = document.getElementById('price-model').value.trim();
+        const inputPrice = parseFloat(document.getElementById('price-input').value) || 0;
+        const outputPrice = parseFloat(document.getElementById('price-output').value) || 0;
+
+        if (!model) {
+            showToast('请填写模型名称', 'warning');
+            saveBtn.disabled = false;
+            saveBtn.textContent = '保存';
+            saveBtn.style.opacity = '1';
+            return;
+        }
+
+        const data = { model, input_price: inputPrice, output_price: outputPrice };
+
+        if (editingPriceId) {
+            await fetchWithAuth(`/admin/prices/${editingPriceId}`, {
+                method: 'PATCH', body: JSON.stringify(data)
+            });
+        } else {
+            await fetchWithAuth('/admin/prices', {
+                method: 'POST', body: JSON.stringify(data)
+            });
+        }
+        closePriceModal();
+        showToast(editingPriceId ? '价格已更新' : '价格已创建', 'success');
+        loadPrices();
+    } catch (e) {
+        showToast('保存失败: ' + e.message, 'error');
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存';
+        saveBtn.style.opacity = '1';
     }
-
-    const data = {
-        model,
-        input_price: inputPrice,
-        output_price: outputPrice
-    };
-
-    if (editingPriceId) {
-        await fetchWithAuth(`/admin/prices/${editingPriceId}`, {
-            method: 'PATCH',
-            body: JSON.stringify(data)
-        });
-    } else {
-        await fetchWithAuth('/admin/prices', {
-            method: 'POST',
-            body: JSON.stringify(data)
-        });
-    }
-    closePriceModal();
-    loadPrices();
 }
 
 async function togglePrice(id, is_active) {
-    await fetchWithAuth(`/admin/prices/${id}/toggle`, {
-        method: 'POST',
-        body: JSON.stringify({is_active})
+    const action = is_active ? '启用' : '禁用';
+    showConfirm(`${action}价格配置`, `确定${action}此价格配置？`, async () => {
+        await fetchWithAuth(`/admin/prices/${id}/toggle`, {
+            method: 'POST',
+            body: JSON.stringify({is_active})
+        });
+        showToast(`价格配置已${action}`, 'success');
+        loadPrices();
     });
-    loadPrices();
 }
 
 async function deletePrice(id) {
-    if (confirm('确定删除此价格配置？')) {
+    showConfirm('删除价格配置', '确定删除此价格配置？', async () => {
         await fetchWithAuth(`/admin/prices/${id}`, {method: 'DELETE'});
+        showToast('价格配置已删除', 'success');
         loadPrices();
-    }
+    });
 }
 
 // Model Stats
@@ -636,10 +766,18 @@ async function loadModelStats(hours) {
 
     document.getElementById('model-stats-period').textContent = hours < 24 ? `${hours}时` : `${hours / 24}天`;
 
-    const res = await fetchWithAuth(`/stats/models?hours=${hours}`);
-    const data = await res.json();
-
     const container = document.getElementById('model-stats-container');
+
+    let data;
+    try {
+        const res = await fetchWithAuth(`/stats/models?hours=${hours}`);
+        if (!res.ok) { container.innerHTML = '<div class="error-banner show">加载模型统计数据失败</div>'; return; }
+        data = await res.json();
+    } catch (e) {
+        container.innerHTML = `<div class="error-banner show">加载模型统计数据失败: ${e.message}</div>`;
+        return;
+    }
+
     const maxRequests = data.stats && data.stats.length > 0 ? data.stats[0].requests : 1;
 
     const totalInputTokens = data.stats ? data.stats.reduce((sum, s) => sum + s.request_tokens, 0) : 0;
@@ -767,7 +905,14 @@ async function testChannel(id) {
     btn.textContent = '测试中...';
     btn.disabled = true;
     btn.style.opacity = '0.6';
-    latencyCell.innerHTML = '<span style="color: var(--text-muted); font-family: JetBrains Mono; font-size: 12px;">...</span>';
+    latencyCell.innerHTML = '<span class="font-mono-sm text-muted">...</span>';
+
+    function resetBtn() {
+        btn.textContent = originalText;
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.className = 'btn btn-sm btn-test';
+    }
 
     try {
         const res = await fetchWithAuth(`/admin/channels/${id}/test`, {
@@ -776,44 +921,29 @@ async function testChannel(id) {
         const data = await res.json();
 
         if (data.success) {
-            latencyCell.innerHTML = `<span style="color: var(--success); font-family: JetBrains Mono; font-size: 12px; font-weight: 600;">${data.latency_ms}ms</span>`;
+            latencyCell.innerHTML = `<span class="font-mono-sm text-success" style="font-weight:600;">${data.latency_ms}ms</span>`;
             btn.textContent = '✓';
+            btn.className = 'btn btn-sm';
             btn.style.borderColor = 'rgba(34, 197, 94, 0.5)';
-            btn.style.color = 'var(--success)';
+            btn.style.color = 'var(--accent-success)';
             btn.style.background = 'rgba(34, 197, 94, 0.1)';
         } else {
-            latencyCell.innerHTML = `<span style="color: var(--error); font-family: JetBrains Mono; font-size: 12px;">错误</span>`;
+            latencyCell.innerHTML = '<span class="font-mono-sm text-error">错误</span>';
             btn.textContent = '✗';
+            btn.className = 'btn btn-sm';
             btn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
-            btn.style.color = 'var(--error)';
+            btn.style.color = 'var(--accent-error)';
             btn.style.background = 'rgba(239, 68, 68, 0.1)';
-            console.error('Test failed:', data.error);
         }
 
-        setTimeout(() => {
-            btn.textContent = originalText;
-            btn.disabled = false;
-            btn.style.opacity = '1';
-            btn.style.borderColor = 'rgba(0, 217, 255, 0.3)';
-            btn.style.color = 'var(--accent)';
-            btn.style.background = '';
-        }, 3000);
-
+        setTimeout(resetBtn, 3000);
     } catch (e) {
-        latencyCell.innerHTML = `<span style="color: var(--error); font-family: JetBrains Mono; font-size: 12px;">Error</span>`;
+        latencyCell.innerHTML = '<span class="font-mono-sm text-error">Error</span>';
         btn.textContent = '✗';
+        btn.className = 'btn btn-sm';
         btn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
-        btn.style.color = 'var(--error)';
-        console.error('Test error:', e);
-
-        setTimeout(() => {
-            btn.textContent = originalText;
-            btn.disabled = false;
-            btn.style.opacity = '1';
-            btn.style.borderColor = 'rgba(0, 217, 255, 0.3)';
-            btn.style.color = 'var(--accent)';
-            btn.style.background = '';
-        }, 3000);
+        btn.style.color = 'var(--accent-error)';
+        setTimeout(resetBtn, 3000);
     }
 }
 

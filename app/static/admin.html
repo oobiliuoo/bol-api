@@ -133,6 +133,21 @@
         </div>
     </main>
 
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Confirm Dialog -->
+    <div class="confirm-overlay" id="confirm-overlay">
+        <div class="confirm-box">
+            <div class="confirm-title" id="confirm-title">确认操作</div>
+            <div class="confirm-msg" id="confirm-msg">确定执行此操作？</div>
+            <div class="confirm-actions">
+                <button class="btn" onclick="confirmCancel()">取消</button>
+                <button class="btn btn-danger" id="confirm-btn" onclick="confirmOk()">确定</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Key Modal -->
     <div class="modal-overlay" id="key-modal">
         <div class="modal">
