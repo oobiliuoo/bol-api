@@ -183,6 +183,7 @@ function formatDate(s) {
     return new Date(s).toLocaleDateString('zh-CN', {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
 }
 
+
 // Keys
 async function loadKeys() {
     const tbody = document.querySelector('#keys-table tbody');
@@ -821,6 +822,20 @@ async function loadModelStats(hours) {
                         <div class="summary-label">总费用</div>
                     </div>
                 </div>
+                <div class="model-summary-card">
+                    <div class="summary-icon" style="color: var(--accent-primary);">⏱</div>
+                    <div class="summary-content">
+                        <div class="summary-value">${data.total_p50}ms</div>
+                        <div class="summary-label">P50 延迟</div>
+                    </div>
+                </div>
+                <div class="model-summary-card">
+                    <div class="summary-icon" style="color: var(--accent-error);">⚡</div>
+                    <div class="summary-content">
+                        <div class="summary-value">${data.total_peak}ms</div>
+                        <div class="summary-label">峰值延迟</div>
+                    </div>
+                </div>
             </div>
 
             <!-- 可视化图表 -->
@@ -877,6 +892,14 @@ async function loadModelStats(hours) {
                                     <div class="detail-stat">
                                         <span class="detail-stat-label">费用</span>
                                         <span class="detail-stat-value" style="color: var(--accent-success);">$${s.cost.toFixed(4)}</span>
+                                    </div>
+                                    <div class="detail-stat">
+                                        <span class="detail-stat-label">P50</span>
+                                        <span class="detail-stat-value" style="color: var(--accent-primary);">${s.p50_latency}ms</span>
+                                    </div>
+                                    <div class="detail-stat">
+                                        <span class="detail-stat-label">峰值</span>
+                                        <span class="detail-stat-value" style="color: var(--accent-secondary);">${s.peak_latency}ms</span>
                                     </div>
                                 </div>
                             </div>

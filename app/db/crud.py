@@ -257,10 +257,10 @@ async def get_usage_summary(
 
 
 async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
-    """获取按模型分组的统计数据（使用 SQL 聚合）"""
+    """获取按模型分组的统计数据（p50 延迟 + 峰值延迟）"""
     start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-    # 使用 SQL GROUP BY 聚合
+    # 1. 主聚合查询
     query = (
         select(
             UsageLog.model,
@@ -276,7 +276,26 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
     result = await session.execute(query)
     rows = result.all()
 
-    # 转换为字典列表并按请求次数排序
+    # 2. 获取所有延迟值（用于计算 p50 和峰值）
+    latency_query = select(UsageLog.model, UsageLog.latency_ms).where(
+        UsageLog.timestamp >= start_time, UsageLog.latency_ms > 0
+    )
+    latency_result = await session.execute(latency_query)
+
+    latency_map = {}
+    for row in latency_result:
+        latency_map.setdefault(row.model, []).append(row.latency_ms)
+
+    # 3. 按模型计算 p50 和峰值
+    latency_stats = {}
+    for model, lats in latency_map.items():
+        lats.sort()
+        mid = len(lats) // 2
+        p50 = lats[mid]  # 偶数长度取上中位数
+        peak = lats[-1]
+        latency_stats[model] = {"p50": p50, "peak": peak}
+
+    # 4. 合并结果
     model_stats = []
     total_requests = 0
     total_tokens = 0
@@ -287,6 +306,8 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
         resp_tokens = row.response_tokens or 0
         cost = row.cost or 0.0
 
+        ls = latency_stats.get(row.model, {"p50": 0, "peak": 0})
+
         model_stats.append(
             {
                 "model": row.model,
@@ -294,6 +315,8 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
                 "request_tokens": req_tokens,
                 "response_tokens": resp_tokens,
                 "cost": cost,
+                "p50_latency": ls["p50"],
+                "peak_latency": ls["peak"],
             }
         )
 
@@ -304,7 +327,14 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
     # 按请求次数排序
     model_stats.sort(key=lambda x: x["requests"], reverse=True)
 
-    # 计算days/hours显示
+    # 计算总体 p50 和峰值
+    all_latencies = []
+    for lats in latency_map.values():
+        all_latencies.extend(lats)
+    all_latencies.sort()
+    total_p50 = all_latencies[len(all_latencies) // 2] if all_latencies else 0
+    total_peak = all_latencies[-1] if all_latencies else 0
+
     if hours < 24:
         period_label = f"{hours}h"
     else:
@@ -315,6 +345,8 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
         "total_requests": total_requests,
         "total_tokens": total_tokens,
         "total_cost": total_cost,
+        "total_p50": total_p50,
+        "total_peak": total_peak,
         "period": period_label,
         "hours": hours,
     }

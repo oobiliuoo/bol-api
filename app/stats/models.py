@@ -34,6 +34,8 @@ class ModelStat(BaseModel):
     request_tokens: int
     response_tokens: int
     cost: float
+    p50_latency: int = 0
+    peak_latency: int = 0
 
 
 class ModelStatsResponse(BaseModel):
@@ -41,5 +43,7 @@ class ModelStatsResponse(BaseModel):
     total_requests: int
     total_tokens: int
     total_cost: float
+    total_p50: int = 0
+    total_peak: int = 0
     period: str
     hours: int

@@ -1,5 +1,6 @@
 import time
 import json
+import asyncio
 import httpx
 import logging
 from fastapi import APIRouter, Request, HTTPException, Depends
@@ -149,6 +150,27 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
             failed_channels.append(channel)
             last_error = e
             continue  # 尝试下一个渠道
+        except asyncio.CancelledError:
+            # 客户端断开连接，记录已发往上游的请求
+            latency_ms = int((time.time() - start_time) * 1000)
+            request_logger.log_error(
+                "/v1/chat/completions",
+                channel.id,
+                model,
+                error="Client disconnected",
+                error_type="CANCELLED",
+                latency_ms=latency_ms,
+            )
+            await UsageRecorder.record(
+                api_key_id=api_key_id,
+                channel_id=channel.id,
+                provider=channel.provider_type,
+                model=model,
+                endpoint="/v1/chat/completions",
+                status_code=499,
+                latency_ms=latency_ms,
+            )
+            raise
         except httpx.HTTPStatusError as e:
             # 上游返回4xx/5xx，提取响应体中的具体错误信息
             detail = e.response.text if e.response else str(e)
@@ -202,17 +224,20 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
     # 所有渠道都失败
     latency_ms = int((time.time() - start_time) * 1000)
     if failed_channels:
-        # 记录最后一个失败渠道
+        # 记录最后一个失败渠道（使用 shield 防止 CancelledError 中断记录）
         last_channel = failed_channels[-1]
-        await UsageRecorder.record(
-            api_key_id=api_key_id,
-            channel_id=last_channel.id,
-            provider=last_channel.provider_type,
-            model=model,
-            endpoint="/v1/chat/completions",
-            status_code=504 if isinstance(last_error, httpx.TimeoutException) else 502,
-            latency_ms=latency_ms,
-        )
+        try:
+            await asyncio.shield(UsageRecorder.record(
+                api_key_id=api_key_id,
+                channel_id=last_channel.id,
+                provider=last_channel.provider_type,
+                model=model,
+                endpoint="/v1/chat/completions",
+                status_code=504 if isinstance(last_error, httpx.TimeoutException) else 502,
+                latency_ms=latency_ms,
+            ))
+        except asyncio.CancelledError:
+            pass
 
     if isinstance(last_error, httpx.TimeoutException):
         raise HTTPException(status_code=504, detail="All channels timed out")
@@ -288,6 +313,31 @@ async def stream_chat_response(
                 cost=cost,
                 latency_ms=latency_ms,
             )
+
+    except asyncio.CancelledError:
+        # 客户端断开连接，记录已发往上游的请求
+        latency_ms = int((time.time() - start_time) * 1000)
+        request_logger.log_error(
+            "/v1/chat/completions",
+            channel.id,
+            model,
+            error="Client disconnected during stream",
+            error_type="STREAM_CANCELLED",
+            latency_ms=latency_ms,
+        )
+        try:
+            await asyncio.shield(UsageRecorder.record(
+                api_key_id=api_key_id,
+                channel_id=channel.id,
+                provider=channel.provider_type,
+                model=model,
+                endpoint="/v1/chat/completions",
+                status_code=499,
+                latency_ms=latency_ms,
+            ))
+        except asyncio.CancelledError:
+            pass
+        raise
 
     except Exception as e:
         error_msg = str(e)
@@ -446,6 +496,26 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
             failed_channels.append(channel)
             last_error = e
             continue  # 尝试下一个渠道
+        except asyncio.CancelledError:
+            latency_ms = int((time.time() - start_time) * 1000)
+            request_logger.log_error(
+                "/v1/messages",
+                channel.id,
+                model,
+                error="Client disconnected",
+                error_type="CANCELLED",
+                latency_ms=latency_ms,
+            )
+            await UsageRecorder.record(
+                api_key_id=api_key_id,
+                channel_id=channel.id,
+                provider=channel.provider_type,
+                model=model,
+                endpoint="/v1/messages",
+                status_code=499,
+                latency_ms=latency_ms,
+            )
+            raise
         except httpx.HTTPStatusError as e:
             # 上游返回4xx/5xx，提取响应体中的具体错误信息
             detail = e.response.text if e.response else str(e)
@@ -499,17 +569,20 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
     # 所有渠道都失败
     latency_ms = int((time.time() - start_time) * 1000)
     if failed_channels:
-        # 记录最后一个失败渠道
+        # 记录最后一个失败渠道（使用 shield 防止 CancelledError 中断记录）
         last_channel = failed_channels[-1]
-        await UsageRecorder.record(
-            api_key_id=api_key_id,
-            channel_id=last_channel.id,
-            provider=last_channel.provider_type,
-            model=model,
-            endpoint="/v1/messages",
-            status_code=504 if isinstance(last_error, httpx.TimeoutException) else 502,
-            latency_ms=latency_ms,
-        )
+        try:
+            await asyncio.shield(UsageRecorder.record(
+                api_key_id=api_key_id,
+                channel_id=last_channel.id,
+                provider=last_channel.provider_type,
+                model=model,
+                endpoint="/v1/messages",
+                status_code=504 if isinstance(last_error, httpx.TimeoutException) else 502,
+                latency_ms=latency_ms,
+            ))
+        except asyncio.CancelledError:
+            pass
 
     if isinstance(last_error, httpx.TimeoutException):
         raise HTTPException(status_code=504, detail="All channels timed out")
@@ -596,6 +669,31 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
                 cost=cost,
                 latency_ms=latency_ms,
             )
+
+    except asyncio.CancelledError:
+        # 客户端断开连接，记录已发往上游的请求
+        latency_ms = int((time.time() - start_time) * 1000)
+        request_logger.log_error(
+            "/v1/messages",
+            channel.id,
+            model,
+            error="Client disconnected during stream",
+            error_type="STREAM_CANCELLED",
+            latency_ms=latency_ms,
+        )
+        try:
+            await asyncio.shield(UsageRecorder.record(
+                api_key_id=api_key_id,
+                channel_id=channel.id,
+                provider=channel.provider_type,
+                model=model,
+                endpoint="/v1/messages",
+                status_code=499,
+                latency_ms=latency_ms,
+            ))
+        except asyncio.CancelledError:
+            pass
+        raise
 
     except Exception as e:
         error_msg = str(e)
