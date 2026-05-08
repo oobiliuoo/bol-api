@@ -26,6 +26,7 @@ class UsageSummaryResponse(BaseModel):
     days: int
     rpm: float
     tpm: float
+    request_timeout: int = 300
 
 
 class ModelStat(BaseModel):

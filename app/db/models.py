@@ -71,3 +71,13 @@ class UsageLog(Base):
 
     api_key = relationship("APIKey", back_populates="usage_logs")
     channel = relationship("Channel", back_populates="usage_logs")
+
+
+class SystemSetting(Base):
+    """系统配置键值对"""
+    __tablename__ = "system_settings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key = Column(String(50), unique=True, nullable=False, index=True)
+    value = Column(String(255), nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)

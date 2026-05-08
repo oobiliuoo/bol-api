@@ -5,7 +5,8 @@ from app.db.database import get_db
 from app.db.crud import (
     create_channel, get_all_channels, update_channel, delete_channel, toggle_channel,
     create_model_price, get_all_model_prices, update_model_price, delete_model_price,
-    toggle_model_price, get_model_price_by_id
+    toggle_model_price, get_model_price_by_id,
+    get_setting, set_setting, get_all_settings
 )
 from app.channels.models import ChannelCreate, ChannelUpdate, ChannelResponse
 from app.config import settings
@@ -395,3 +396,36 @@ async def delete_price_route(
     if not success:
         raise HTTPException(status_code=404, detail="Price config not found")
     return {"message": "Price config deleted"}
+
+
+# 系统设置
+from pydantic import BaseModel
+class SettingUpdate(BaseModel):
+    key: str
+    value: str
+
+
+@router.get("/admin/settings", response_model=dict)
+async def get_settings(db: AsyncSession = Depends(get_db), _: bool = Depends(verify_admin)):
+    """获取所有系统设置"""
+    all_settings = await get_all_settings(db)
+    # 确保默认超时值存在
+    if "request_timeout" not in all_settings:
+        all_settings["request_timeout"] = str(settings.request_timeout)
+    return all_settings
+
+
+@router.put("/admin/settings/{key}")
+async def update_setting(
+    key: str,
+    body: SettingUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_admin)
+):
+    """更新系统设置"""
+    await set_setting(db, key, body.value)
+    # 如果修改了超时，清除缓存
+    if key == "request_timeout":
+        from app.utils.http_client import refresh_timeout_cache
+        await refresh_timeout_cache()
+    return {"message": f"Setting '{key}' updated"}

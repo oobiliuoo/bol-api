@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     jwt_expire_hours: int = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
     host: str = os.getenv("HOST", "0.0.0.0")
     port: int = int(os.getenv("PORT", "8000"))
+    request_timeout: int = int(os.getenv("REQUEST_TIMEOUT", "300"))
 
     class Config:
         env_file = ".env"

@@ -20,6 +20,7 @@
                 <div class="status-dot"></div>
                 <span>System Online</span>
             </div>
+            <button class="btn btn-logout" onclick="showSettingsModal()">设置</button>
             <button class="btn btn-logout" onclick="logout()">退出登录</button>
         </div>
     </header>
@@ -267,6 +268,29 @@
             <div class="modal-footer">
                 <button class="btn" onclick="closePriceModal()">取消</button>
                 <button class="btn btn-primary" onclick="savePrice()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">系统设置</span>
+                <div class="modal-close" onclick="closeSettingsModal()">✕</div>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>上游请求超时（秒）</label>
+                    <input type="number" id="setting-timeout" value="300" min="30" max="3600" step="30" placeholder="30-3600">
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                        超出此时间未收到响应视为超时，建议 120-600 秒
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeSettingsModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveSettings()">保存</button>
             </div>
         </div>
     </div>

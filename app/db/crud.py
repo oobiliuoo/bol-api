@@ -2,7 +2,7 @@ import secrets
 import hashlib
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import APIKey, Channel, UsageLog, ModelPrice
+from app.db.models import APIKey, Channel, UsageLog, ModelPrice, SystemSetting
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from app.utils.encryption import encrypt_key, decrypt_key, is_encrypted
@@ -432,3 +432,31 @@ async def delete_model_price(session: AsyncSession, price_id: int) -> bool:
         await session.commit()
         return True
     return False
+
+
+# 系统设置管理
+async def get_setting(session: AsyncSession, key: str) -> Optional[str]:
+    """获取配置值，不存在返回 None"""
+    result = await session.execute(select(SystemSetting).where(SystemSetting.key == key))
+    setting = result.scalar_one_or_none()
+    return setting.value if setting else None
+
+
+async def set_setting(session: AsyncSession, key: str, value: str) -> SystemSetting:
+    """创建或更新配置"""
+    result = await session.execute(select(SystemSetting).where(SystemSetting.key == key))
+    setting = result.scalar_one_or_none()
+    if setting:
+        setting.value = value
+    else:
+        setting = SystemSetting(key=key, value=value)
+        session.add(setting)
+    await session.commit()
+    await session.refresh(setting)
+    return setting
+
+
+async def get_all_settings(session: AsyncSession) -> dict:
+    """获取所有配置"""
+    result = await session.execute(select(SystemSetting))
+    return {s.key: s.value for s in result.scalars().all()}

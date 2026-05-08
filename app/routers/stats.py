@@ -66,6 +66,7 @@ async def get_summary(
 ):
     """获取用量统计摘要"""
     summary = await get_usage_summary(db, api_key_id, days)
+    summary["request_timeout"] = settings.request_timeout
     return UsageSummaryResponse(**summary)
 
 

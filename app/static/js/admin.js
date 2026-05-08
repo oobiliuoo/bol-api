@@ -989,3 +989,40 @@ loadModelStats(168);
 // Refresh stats periodically
 setInterval(loadStats, 30000);
 setInterval(() => loadModelStats(168), 30000);
+
+// Settings
+async function showSettingsModal() {
+    try {
+        const res = await fetchWithAuth('/admin/settings');
+        if (!res.ok) { showToast('加载设置失败', 'error'); return; }
+        const data = await res.json();
+        document.getElementById('setting-timeout').value = data.request_timeout || 300;
+        document.getElementById('settings-modal').classList.add('show');
+    } catch (e) {
+        showToast('加载设置失败: ' + e.message, 'error');
+    }
+}
+
+function closeSettingsModal() {
+    document.getElementById('settings-modal').classList.remove('show');
+}
+
+async function saveSettings() {
+    const timeout = parseInt(document.getElementById('setting-timeout').value);
+    if (!timeout || timeout < 30 || timeout > 3600) {
+        showToast('超时时间需在 30-3600 秒之间', 'error');
+        return;
+    }
+    try {
+        const res = await fetchWithAuth('/admin/settings/request_timeout', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({key: 'request_timeout', value: String(timeout)})
+        });
+        if (!res.ok) { showToast('保存设置失败', 'error'); return; }
+        showToast('设置已保存，超时已更新为 ' + timeout + ' 秒', 'success');
+        closeSettingsModal();
+    } catch (e) {
+        showToast('保存设置失败: ' + e.message, 'error');
+    }
+}
