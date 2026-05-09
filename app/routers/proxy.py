@@ -605,40 +605,46 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
     output_tokens = 0
 
     try:
+        sse_buffer: list[str] = []
         async for line in provider.stream_chat_completion(body):
-            # SSE格式：每个事件以\n\n结尾
-            if line.strip():  # 非空行
-                yield f"{line}\n\n"
-            # 兼容两种格式: "data: {...}" 和 "data:{...}"
-            if line.startswith("data:"):
-                try:
-                    # 跳过"data:"或"data: "，添加长度检查防止越界
-                    if len(line) > 5 and line[5] == "{":
-                        json_str = line[5:]
-                    elif len(line) > 6:
-                        json_str = line[6:]
-                    else:
-                        continue  # 行太短，跳过
-                    data = json.loads(json_str)
-                    if data.get("type") == "content_block_delta":
-                        delta = data.get("delta", {})
-                        text = delta.get("text", "")
-                        total_content += text
-                    elif data.get("type") == "message_start":
-                        usage = data.get("message", {}).get("usage", {})
-                        input_tokens = usage.get("input_tokens", 0)
-                    elif data.get("type") == "message_delta":
-                        # message_delta可能包含完整的usage信息（某些上游服务商）
-                        usage = data.get("usage", {})
-                        if usage:
-                            input_tokens = usage.get("input_tokens", input_tokens)
-                            output_tokens = usage.get("output_tokens", 0)
-                        # 也尝试从delta中获取（标准Anthropic格式）
-                        delta_usage = data.get("delta", {}).get("usage", {})
-                        if delta_usage:
-                            output_tokens = delta_usage.get("output_tokens", 0)
-                except json.JSONDecodeError:
-                    pass  # JSON解析失败，跳过此行
+            if line.strip():
+                # 收集 SSE 事件行（event: / data:），等空行一起 flush
+                sse_buffer.append(line)
+                if line.startswith("data:"):
+                    try:
+                        # 兼容 "data: {...}" 和 "data:{...}" 两种格式
+                        if len(line) > 5 and line[5] == "{":
+                            json_str = line[5:]
+                        elif len(line) > 6:
+                            json_str = line[6:]
+                        else:
+                            continue
+                        data = json.loads(json_str)
+                        if data.get("type") == "content_block_delta":
+                            delta = data.get("delta", {})
+                            text = delta.get("text", "")
+                            total_content += text
+                        elif data.get("type") == "message_start":
+                            usage = data.get("message", {}).get("usage", {})
+                            input_tokens = usage.get("input_tokens", 0)
+                        elif data.get("type") == "message_delta":
+                            usage = data.get("usage", {})
+                            if usage:
+                                input_tokens = usage.get("input_tokens", input_tokens)
+                                output_tokens = usage.get("output_tokens", 0)
+                            delta_usage = data.get("delta", {}).get("usage", {})
+                            if delta_usage:
+                                output_tokens = delta_usage.get("output_tokens", 0)
+                    except json.JSONDecodeError:
+                        pass
+            else:
+                # 空行 = SSE 事件结束，flush 完整事件给客户端
+                if sse_buffer:
+                    yield "\n".join(sse_buffer) + "\n\n"
+                    sse_buffer = []
+        # 流结束，flush 剩余缓冲区
+        if sse_buffer:
+            yield "\n".join(sse_buffer) + "\n\n"
 
         latency_ms = int((time.time() - start_time) * 1000)
         # If upstream did not provide usage, estimate tokens accurately
