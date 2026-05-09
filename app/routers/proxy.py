@@ -151,7 +151,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
             last_error = e
             continue  # 尝试下一个渠道
         except asyncio.CancelledError:
-            # 客户端断开连接，记录已发往上游的请求
+            # 客户端断开连接，记录已发往上游的请求（含估算 token）
             latency_ms = int((time.time() - start_time) * 1000)
             request_logger.log_error(
                 "/v1/chat/completions",
@@ -161,12 +161,14 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                 error_type="CANCELLED",
                 latency_ms=latency_ms,
             )
+            prompt_tokens = count_message_tokens(body.get("messages", []), model)
             await UsageRecorder.record(
                 api_key_id=api_key_id,
                 channel_id=channel.id,
                 provider=channel.provider_type,
                 model=model,
                 endpoint="/v1/chat/completions",
+                request_tokens=prompt_tokens,
                 status_code=499,
                 latency_ms=latency_ms,
             )
@@ -316,6 +318,7 @@ async def stream_chat_response(
 
     except asyncio.CancelledError:
         # 客户端断开连接，记录已发往上游的请求
+        # 保留已收到的 token 数据（上游可能已处理了部分请求）
         latency_ms = int((time.time() - start_time) * 1000)
         request_logger.log_error(
             "/v1/chat/completions",
@@ -325,6 +328,8 @@ async def stream_chat_response(
             error_type="STREAM_CANCELLED",
             latency_ms=latency_ms,
         )
+        if prompt_tokens == 0:
+            prompt_tokens = count_message_tokens(body.get("messages", []), model)
         try:
             await asyncio.shield(UsageRecorder.record(
                 api_key_id=api_key_id,
@@ -332,6 +337,8 @@ async def stream_chat_response(
                 provider=channel.provider_type,
                 model=model,
                 endpoint="/v1/chat/completions",
+                request_tokens=prompt_tokens,
+                response_tokens=completion_tokens,
                 status_code=499,
                 latency_ms=latency_ms,
             ))
@@ -506,12 +513,14 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                 error_type="CANCELLED",
                 latency_ms=latency_ms,
             )
+            input_tokens = count_message_tokens(body.get("messages", []), model)
             await UsageRecorder.record(
                 api_key_id=api_key_id,
                 channel_id=channel.id,
                 provider=channel.provider_type,
                 model=model,
                 endpoint="/v1/messages",
+                request_tokens=input_tokens,
                 status_code=499,
                 latency_ms=latency_ms,
             )
@@ -678,6 +687,7 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
 
     except asyncio.CancelledError:
         # 客户端断开连接，记录已发往上游的请求
+        # 保留已收到的 token 数据（上游可能已处理了部分请求）
         latency_ms = int((time.time() - start_time) * 1000)
         request_logger.log_error(
             "/v1/messages",
@@ -687,6 +697,8 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
             error_type="STREAM_CANCELLED",
             latency_ms=latency_ms,
         )
+        if input_tokens == 0:
+            input_tokens = count_message_tokens(body.get("messages", []), model)
         try:
             await asyncio.shield(UsageRecorder.record(
                 api_key_id=api_key_id,
@@ -694,6 +706,8 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
                 provider=channel.provider_type,
                 model=model,
                 endpoint="/v1/messages",
+                request_tokens=input_tokens,
+                response_tokens=output_tokens,
                 status_code=499,
                 latency_ms=latency_ms,
             ))
