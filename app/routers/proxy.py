@@ -33,9 +33,10 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=400, detail="Missing model parameter")
 
     api_key_id = getattr(request.state, "api_key_id", None)
+    request_id = getattr(request.state, "request_id", None)
     start_time = time.time()
 
-    request_logger.log_request("/v1/chat/completions", body, api_key_id=api_key_id)
+    request_logger.log_request("/v1/chat/completions", body, api_key_id=api_key_id, request_id=request_id)
 
     # 获取所有支持该模型的渠道用于fallback
     all_channels = await ChannelManager.select_all_channels(db, model, protocol="openai")
@@ -46,6 +47,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
             model=model,
             error="No available channel",
             error_type="NO_CHANNEL",
+            request_id=request_id,
         )
         raise HTTPException(
             status_code=400, detail=f"No available channel for model: {model}"
@@ -68,6 +70,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
             body,
             api_key_id=api_key_id,
             extra={"channel_id": channel.id, "channel_name": channel.name},
+            request_id=request_id,
         )
         provider = create_provider(channel)
         if not provider.supports_model(model):
@@ -76,6 +79,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                 channel.id,
                 model,
                 reason=f"provider does not support model {model}",
+                request_id=request_id,
             )
             failed_channels.append(channel)
             continue
@@ -83,7 +87,8 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
         try:
             if stream:
                 request_logger.log_stream_start(
-                    "/v1/chat/completions", channel.id, model, api_key_id=api_key_id
+                    "/v1/chat/completions", channel.id, model, api_key_id=api_key_id,
+                    request_id=request_id,
                 )
                 return StreamingResponse(
                     stream_chat_response(
@@ -106,6 +111,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                     latency_ms=latency_ms,
                     tokens=usage["total_tokens"],
                     body=response,
+                    request_id=request_id,
                 )
 
                 # 记录用量
@@ -134,6 +140,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                 error=str(e),
                 error_type="TIMEOUT",
                 latency_ms=int((time.time() - start_time) * 1000),
+                request_id=request_id,
             )
             failed_channels.append(channel)
             last_error = e
@@ -146,6 +153,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                 error=str(e),
                 error_type="CONNECT_ERROR",
                 latency_ms=int((time.time() - start_time) * 1000),
+                request_id=request_id,
             )
             failed_channels.append(channel)
             last_error = e
@@ -160,6 +168,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                 error="Client disconnected",
                 error_type="CANCELLED",
                 latency_ms=latency_ms,
+                request_id=request_id,
             )
             prompt_tokens = count_message_tokens(body.get("messages", []), model)
             await UsageRecorder.record(
@@ -185,6 +194,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                 error=f"HTTP {status_code}: {detail}",
                 error_type="UPSTREAM_ERROR",
                 latency_ms=latency_ms,
+                request_id=request_id,
             )
             # 4xx错误不重试（请求本身有问题，换渠道也一样）
             if status_code >= 500:
@@ -209,6 +219,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                 error=str(e),
                 error_type="ERROR",
                 latency_ms=int((time.time() - start_time) * 1000),
+                request_id=request_id,
             )
             # 非网络错误，不重试
             latency_ms = int((time.time() - start_time) * 1000)
@@ -262,6 +273,7 @@ async def stream_chat_response(
     model = body.get("model")
     prompt_tokens = 0
     completion_tokens = 0
+    request_id = getattr(request, "state", None) and getattr(request.state, "request_id", None)
 
     try:
         async for line in provider.stream_chat_completion(body):
@@ -299,6 +311,7 @@ async def stream_chat_response(
             model,
             latency_ms=latency_ms,
             tokens=prompt_tokens + completion_tokens,
+            request_id=request_id,
         )
 
         # 在流结束后使用新的session记录用量
@@ -327,6 +340,7 @@ async def stream_chat_response(
             error="Client disconnected during stream",
             error_type="STREAM_CANCELLED",
             latency_ms=latency_ms,
+            request_id=request_id,
         )
         if prompt_tokens == 0:
             prompt_tokens = count_message_tokens(body.get("messages", []), model)
@@ -388,9 +402,10 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
         raise HTTPException(status_code=400, detail="Missing model parameter")
 
     api_key_id = getattr(request.state, "api_key_id", None)
+    request_id = getattr(request.state, "request_id", None)
     start_time = time.time()
 
-    request_logger.log_request("/v1/messages", body, api_key_id=api_key_id)
+    request_logger.log_request("/v1/messages", body, api_key_id=api_key_id, request_id=request_id)
 
     # 获取所有支持该模型的渠道用于fallback
     all_channels = await ChannelManager.select_all_channels(db, model, protocol="anthropic")
@@ -401,6 +416,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
             model=model,
             error="No available channel",
             error_type="NO_CHANNEL",
+            request_id=request_id,
         )
         raise HTTPException(
             status_code=400, detail=f"No available channel for model: {model}"
@@ -423,6 +439,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
             body,
             api_key_id=api_key_id,
             extra={"channel_id": channel.id, "channel_name": channel.name},
+            request_id=request_id,
         )
         provider = create_provider(channel)
         if not provider.supports_model(model):
@@ -431,6 +448,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                 channel.id,
                 model,
                 reason=f"provider does not support model {model}",
+                request_id=request_id,
             )
             failed_channels.append(channel)
             continue
@@ -438,7 +456,8 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
         try:
             if stream:
                 request_logger.log_stream_start(
-                    "/v1/messages", channel.id, model, api_key_id=api_key_id
+                    "/v1/messages", channel.id, model, api_key_id=api_key_id,
+                    request_id=request_id,
                 )
                 return StreamingResponse(
                     stream_anthropic_response(
@@ -460,6 +479,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                     latency_ms=latency_ms,
                     tokens=usage["total_tokens"],
                     body=response,
+                    request_id=request_id,
                 )
 
                 cost = await calculate_cost(
@@ -487,6 +507,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                 error=str(e),
                 error_type="TIMEOUT",
                 latency_ms=int((time.time() - start_time) * 1000),
+                request_id=request_id,
             )
             failed_channels.append(channel)
             last_error = e
@@ -499,6 +520,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                 error=str(e),
                 error_type="CONNECT_ERROR",
                 latency_ms=int((time.time() - start_time) * 1000),
+                request_id=request_id,
             )
             failed_channels.append(channel)
             last_error = e
@@ -512,6 +534,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                 error="Client disconnected",
                 error_type="CANCELLED",
                 latency_ms=latency_ms,
+                request_id=request_id,
             )
             input_tokens = count_message_tokens(body.get("messages", []), model)
             await UsageRecorder.record(
@@ -537,6 +560,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                 error=f"HTTP {status_code}: {detail}",
                 error_type="UPSTREAM_ERROR",
                 latency_ms=latency_ms,
+                request_id=request_id,
             )
             # 4xx错误不重试（请求本身有问题，换渠道也一样）
             if status_code >= 500:
@@ -561,6 +585,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                 error=str(e),
                 error_type="ERROR",
                 latency_ms=int((time.time() - start_time) * 1000),
+                request_id=request_id,
             )
             # 非网络错误，不重试
             latency_ms = int((time.time() - start_time) * 1000)
@@ -612,6 +637,7 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
     model = body.get("model")
     input_tokens = 0
     output_tokens = 0
+    request_id = getattr(request, "state", None) and getattr(request.state, "request_id", None)
 
     try:
         sse_buffer: list[str] = []
@@ -668,6 +694,7 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
             model,
             latency_ms=latency_ms,
             tokens=input_tokens + output_tokens,
+            request_id=request_id,
         )
 
         # 在流结束后使用新的session记录用量
@@ -696,6 +723,7 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
             error="Client disconnected during stream",
             error_type="STREAM_CANCELLED",
             latency_ms=latency_ms,
+            request_id=request_id,
         )
         if input_tokens == 0:
             input_tokens = count_message_tokens(body.get("messages", []), model)

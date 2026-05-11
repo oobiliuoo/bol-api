@@ -4,7 +4,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import APIKey, Channel, UsageLog, ModelPrice, SystemSetting
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List
+from typing import Optional, List, Union
 from app.utils.encryption import encrypt_key, decrypt_key, is_encrypted
 
 
@@ -189,16 +189,82 @@ async def get_usage_logs(
     start_time: Optional[datetime] = None,
     end_time: Optional[datetime] = None,
     limit: int = 100,
-) -> List[UsageLog]:
-    query = select(UsageLog).order_by(UsageLog.timestamp.desc()).limit(limit)
+    offset: int = 0,
+    return_count: bool = False,
+    return_summary: bool = False,
+    model_filter: Optional[str] = None,
+    status_code_filter: Optional[int] = None,
+) -> Union[List[UsageLog], tuple]:
+    """获取用量日志，支持分页、筛选和统计"""
+    # 构建基础查询条件
+    conditions = []
     if api_key_id:
-        query = query.where(UsageLog.api_key_id == api_key_id)
+        conditions.append(UsageLog.api_key_id == api_key_id)
     if start_time:
-        query = query.where(UsageLog.timestamp >= start_time)
+        conditions.append(UsageLog.timestamp >= start_time)
     if end_time:
-        query = query.where(UsageLog.timestamp <= end_time)
+        conditions.append(UsageLog.timestamp <= end_time)
+    if model_filter:
+        conditions.append(UsageLog.model == model_filter)
+    if status_code_filter is not None:
+        if status_code_filter == -1:  # 错误状态（非 200 和非 499）
+            conditions.append(UsageLog.status_code != 200)
+            conditions.append(UsageLog.status_code != 499)
+        else:
+            conditions.append(UsageLog.status_code == status_code_filter)
+
+    # 主查询
+    query = select(UsageLog).order_by(UsageLog.timestamp.desc()).limit(limit).offset(offset)
+    for cond in conditions:
+        query = query.where(cond)
     result = await session.execute(query)
-    return result.scalars().all()
+    logs = result.scalars().all()
+
+    if return_count or return_summary:
+        count_query = select(func.count()).select_from(UsageLog)
+        for cond in conditions:
+            count_query = count_query.where(cond)
+        count_result = await session.execute(count_query)
+        total = count_result.scalar() or 0
+
+        if return_summary:
+            # 汇总统计
+            sum_query = select(
+                func.sum(UsageLog.request_tokens).label("total_input"),
+                func.sum(UsageLog.response_tokens).label("total_output"),
+                func.sum(UsageLog.cost).label("total_cost"),
+                func.avg(UsageLog.latency_ms).label("avg_latency"),
+            )
+            for cond in conditions:
+                sum_query = sum_query.where(cond)
+            sum_result = await session.execute(sum_query)
+            sum_row = sum_result.one()
+
+            # 状态码分布
+            status_query = select(
+                UsageLog.status_code,
+                func.count().label("count")
+            )
+            for cond in conditions:
+                status_query = status_query.where(cond)
+            status_query = status_query.group_by(UsageLog.status_code)
+            status_result = await session.execute(status_query)
+            status_dist = {row.status_code: row.count for row in status_result}
+
+            summary = {
+                "total_requests": total,
+                "total_input": sum_row.total_input or 0,
+                "total_output": sum_row.total_output or 0,
+                "total_cost": sum_row.total_cost or 0.0,
+                "avg_latency": int(sum_row.avg_latency or 0),
+                "success_count": status_dist.get(200, 0),
+                "cancelled_count": status_dist.get(499, 0),
+                "error_count": total - status_dist.get(200, 0) - status_dist.get(499, 0),
+            }
+            return logs, total, summary
+
+        return logs, total
+    return logs
 
 
 async def get_usage_summary(
@@ -286,7 +352,25 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
     for row in latency_result:
         latency_map.setdefault(row.model, []).append(row.latency_ms)
 
-    # 3. 按模型计算 p50 和峰值
+    # 3. 获取状态码分布
+    status_query = (
+        select(
+            UsageLog.model,
+            UsageLog.status_code,
+            func.count().label("count")
+        )
+        .where(UsageLog.timestamp >= start_time)
+        .group_by(UsageLog.model, UsageLog.status_code)
+    )
+    status_result = await session.execute(status_query)
+
+    status_map = {}  # model -> {status_code: count}
+    for row in status_result:
+        if row.model not in status_map:
+            status_map[row.model] = {}
+        status_map[row.model][row.status_code] = row.count
+
+    # 4. 按模型计算 p50 和峰值
     latency_stats = {}
     for model, lats in latency_map.items():
         lats.sort()
@@ -295,11 +379,12 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
         peak = lats[-1]
         latency_stats[model] = {"p50": p50, "peak": peak}
 
-    # 4. 合并结果
+    # 5. 合并结果
     model_stats = []
     total_requests = 0
     total_tokens = 0
     total_cost = 0.0
+    total_errors = 0
 
     for row in rows:
         req_tokens = row.request_tokens or 0
@@ -307,6 +392,11 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
         cost = row.cost or 0.0
 
         ls = latency_stats.get(row.model, {"p50": 0, "peak": 0})
+
+        # 计算错误数和错误率
+        model_status = status_map.get(row.model, {})
+        error_count = sum(c for code, c in model_status.items() if code != 200)
+        error_rate = round(error_count / row.requests * 100, 1) if row.requests > 0 else 0.0
 
         model_stats.append(
             {
@@ -317,12 +407,15 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
                 "cost": cost,
                 "p50_latency": ls["p50"],
                 "peak_latency": ls["peak"],
+                "error_count": error_count,
+                "error_rate": error_rate,
             }
         )
 
         total_requests += row.requests
         total_tokens += req_tokens + resp_tokens
         total_cost += cost
+        total_errors += error_count
 
     # 按请求次数排序
     model_stats.sort(key=lambda x: x["requests"], reverse=True)
@@ -334,6 +427,9 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
     all_latencies.sort()
     total_p50 = all_latencies[len(all_latencies) // 2] if all_latencies else 0
     total_peak = all_latencies[-1] if all_latencies else 0
+
+    # 总体错误率
+    total_error_rate = round(total_errors / total_requests * 100, 1) if total_requests > 0 else 0.0
 
     if hours < 24:
         period_label = f"{hours}h"
@@ -347,6 +443,8 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
         "total_cost": total_cost,
         "total_p50": total_p50,
         "total_peak": total_peak,
+        "total_errors": total_errors,
+        "total_error_rate": total_error_rate,
         "period": period_label,
         "hours": hours,
     }

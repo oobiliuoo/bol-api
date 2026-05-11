@@ -37,6 +37,8 @@ class ModelStat(BaseModel):
     cost: float
     p50_latency: int = 0
     peak_latency: int = 0
+    error_count: int = 0
+    error_rate: float = 0.0
 
 
 class ModelStatsResponse(BaseModel):
@@ -46,5 +48,7 @@ class ModelStatsResponse(BaseModel):
     total_cost: float
     total_p50: int = 0
     total_peak: int = 0
+    total_errors: int = 0
+    total_error_rate: float = 0.0
     period: str
     hours: int

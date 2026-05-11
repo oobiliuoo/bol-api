@@ -836,6 +836,13 @@ async function loadModelStats(hours) {
                         <div class="summary-label">峰值延迟</div>
                     </div>
                 </div>
+                <div class="model-summary-card">
+                    <div class="summary-icon" style="color: ${data.total_error_rate > 5 ? 'var(--accent-error)' : 'var(--accent-warning)'};">⚠</div>
+                    <div class="summary-content">
+                        <div class="summary-value">${data.total_error_rate}%</div>
+                        <div class="summary-label">错误率 (${data.total_errors})</div>
+                    </div>
+                </div>
             </div>
 
             <!-- 可视化图表 -->
@@ -900,6 +907,10 @@ async function loadModelStats(hours) {
                                     <div class="detail-stat">
                                         <span class="detail-stat-label">峰值</span>
                                         <span class="detail-stat-value" style="color: var(--accent-secondary);">${s.peak_latency}ms</span>
+                                    </div>
+                                    <div class="detail-stat">
+                                        <span class="detail-stat-label">错误</span>
+                                        <span class="detail-stat-value" style="color: ${s.error_rate > 5 ? 'var(--accent-error)' : 'var(--text-muted)'};">${s.error_rate}% (${s.error_count})</span>
                                     </div>
                                 </div>
                             </div>
@@ -979,12 +990,152 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
     });
 });
 
+// Logs
+let logsPage = 1;
+const logsPageSize = 50;
+
+async function loadLogs(page = 1) {
+    logsPage = page;
+    const days = document.getElementById('logs-days').value;
+    const model = document.getElementById('logs-model').value;
+    const status = document.getElementById('logs-status').value;
+
+    let url = `/stats/logs?days=${days}&page=${page}&page_size=${logsPageSize}`;
+    if (model) url += `&model=${encodeURIComponent(model)}`;
+    if (status) url += `&status=${status}`;
+
+    try {
+        const res = await fetchWithAuth(url);
+        if (!res.ok) { showToast('加载日志失败', 'error'); return; }
+        const data = await res.json();
+        renderLogs(data.logs);
+        renderLogsPagination(data.total, data.page, data.total_pages);
+        renderLogsSummary(data.summary);
+    } catch (e) {
+        showToast('加载日志失败: ' + e.message, 'error');
+    }
+}
+
+async function loadLogsModels() {
+    const days = document.getElementById('logs-days').value;
+    try {
+        const res = await fetchWithAuth(`/stats/models/list?days=${days}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const select = document.getElementById('logs-model');
+        select.innerHTML = '<option value="">全部模型</option>';
+        for (const m of data.models) {
+            select.innerHTML += `<option value="${m}">${m}</option>`;
+        }
+    } catch (e) {}
+}
+
+function renderLogsSummary(summary) {
+    const container = document.getElementById('logs-summary');
+    if (!summary) {
+        container.innerHTML = '';
+        return;
+    }
+    const successRate = summary.total_requests > 0
+        ? ((summary.success_count / summary.total_requests) * 100).toFixed(1)
+        : 0;
+    container.innerHTML = `
+        <div class="logs-summary-grid">
+            <div class="logs-summary-card">
+                <div class="summary-value">${summary.total_requests}</div>
+                <div class="summary-label">总请求</div>
+            </div>
+            <div class="logs-summary-card">
+                <div class="summary-value">${formatNumber(summary.total_input)}</div>
+                <div class="summary-label">输入 Tokens</div>
+            </div>
+            <div class="logs-summary-card">
+                <div class="summary-value">${formatNumber(summary.total_output)}</div>
+                <div class="summary-label">输出 Tokens</div>
+            </div>
+            <div class="logs-summary-card">
+                <div class="summary-value">$${summary.total_cost.toFixed(4)}</div>
+                <div class="summary-label">总费用</div>
+            </div>
+            <div class="logs-summary-card">
+                <div class="summary-value">${summary.avg_latency}ms</div>
+                <div class="summary-label">平均延迟</div>
+            </div>
+            <div class="logs-summary-card">
+                <div class="summary-value" style="color: var(--accent-success);">${successRate}%</div>
+                <div class="summary-label">成功率 (${summary.success_count}/${summary.total_requests})</div>
+            </div>
+        </div>
+    `;
+}
+
+function renderLogs(logs) {
+    const tbody = document.querySelector('#logs-table tbody');
+    tbody.innerHTML = '';
+    for (const log of logs) {
+        const statusClass = log.status_code === 200 ? 'status-active' : 'status-inactive';
+        const statusText = log.status_code === 200 ? '成功' : log.status_code === 499 ? '取消' : `失败(${log.status_code})`;
+        // 转换 UTC 时间为本地时间
+        const localTime = new Date(log.timestamp).toLocaleString('zh-CN', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false
+        }).replace(/\//g, '-');
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${localTime}</td>
+            <td>${log.model}</td>
+            <td>${log.request_tokens.toLocaleString()}</td>
+            <td>${log.response_tokens.toLocaleString()}</td>
+            <td>$${log.cost.toFixed(4)}</td>
+            <td>${log.latency_ms}ms</td>
+            <td><span class="${statusClass}">${statusText}</span></td>
+        `;
+        tbody.appendChild(row);
+    }
+}
+
+function renderLogsPagination(total, page, totalPages) {
+    const container = document.getElementById('logs-pagination');
+    if (totalPages <= 1) {
+        container.innerHTML = `<span class="pagination-info">共 ${total} 条</span>`;
+        return;
+    }
+    let html = `<span class="pagination-info">共 ${total} 条</span>`;
+    html += `<button class="btn" ${page <= 1 ? 'disabled' : ''} onclick="loadLogs(${page - 1})">上一页</button>`;
+    html += `<span class="pagination-page">${page} / ${totalPages}</span>`;
+    html += `<button class="btn" ${page >= totalPages ? 'disabled' : ''} onclick="loadLogs(${page + 1})">下一页</button>`;
+    container.innerHTML = html;
+}
+
+// Tab switching
+function switchTab(tabName) {
+    // Update tab buttons
+    const tabs = document.querySelectorAll('.tab-btn');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    document.querySelector(`.tab-btn[onclick="switchTab('${tabName}')"]`).classList.add('active');
+
+    // Update tab content
+    const contents = document.querySelectorAll('.tab-content');
+    contents.forEach(content => content.classList.remove('active'));
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+
+    // Load data for the tab if needed
+    if (tabName === 'logs') {
+        loadLogsModels();
+        loadLogs();
+    }
+    if (tabName === 'keys') loadKeys();
+    if (tabName === 'channels') loadChannels();
+    if (tabName === 'prices') loadPrices();
+}
+
 // Initialize
 loadStats();
+loadModelStats(168);
 loadKeys();
 loadChannels();
 loadPrices();
-loadModelStats(168);
 
 // Refresh stats periodically
 setInterval(loadStats, 30000);

@@ -28,108 +28,174 @@
     <main class="main">
         <h1 class="page-title">控制面板</h1>
 
-        <!-- Stats -->
-        <div class="stats-grid" id="stats"></div>
-
-        <!-- Model Usage Section -->
-        <div class="section" id="model-stats-section">
-            <div class="section-header">
-                <div>
-                    <span class="section-title">模型用量统计</span>
-                    <span class="section-title-code" id="model-stats-period">7天</span>
-                </div>
-                <div class="period-tabs-inline">
-                    <button class="period-tab-inline active" onclick="loadModelStats(5)">5时</button>
-                    <button class="period-tab-inline" onclick="loadModelStats(24)">日</button>
-                    <button class="period-tab-inline" onclick="loadModelStats(168)">周</button>
-                    <button class="period-tab-inline" onclick="loadModelStats(720)">月</button>
-                </div>
-            </div>
-            <div id="model-stats-container"></div>
+        <!-- Tab Navigation -->
+        <div class="tabs-nav">
+            <button class="tab-btn active" onclick="switchTab('overview')">概览</button>
+            <button class="tab-btn" onclick="switchTab('logs')">用量日志</button>
+            <button class="tab-btn" onclick="switchTab('keys')">API 密钥</button>
+            <button class="tab-btn" onclick="switchTab('channels')">渠道管理</button>
+            <button class="tab-btn" onclick="switchTab('prices')">模型价格</button>
         </div>
 
-        <!-- API Keys Section -->
-        <div class="section">
-            <div class="section-header">
-                <div>
-                    <span class="section-title">API 密钥</span>
-                    <span class="section-title-code">/admin/keys</span>
+        <!-- Overview Tab -->
+        <div class="tab-content active" id="tab-overview">
+            <!-- Stats -->
+            <div class="stats-grid" id="stats"></div>
+
+            <!-- Model Usage Section -->
+            <div class="section" id="model-stats-section">
+                <div class="section-header">
+                    <div>
+                        <span class="section-title">模型用量统计</span>
+                        <span class="section-title-code" id="model-stats-period">7天</span>
+                    </div>
+                    <div class="period-tabs-inline">
+                        <button class="period-tab-inline active" onclick="loadModelStats(5)">5时</button>
+                        <button class="period-tab-inline" onclick="loadModelStats(24)">日</button>
+                        <button class="period-tab-inline" onclick="loadModelStats(168)">周</button>
+                        <button class="period-tab-inline" onclick="loadModelStats(720)">月</button>
+                    </div>
                 </div>
-                <button class="btn btn-primary" onclick="showKeyModal()">
-                    <span>+ 新建密钥</span>
-                </button>
-            </div>
-            <div class="table-container">
-                <table id="keys-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>名称</th>
-                            <th>密钥</th>
-                            <th>状态</th>
-                            <th>创建时间</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
+                <div id="model-stats-container"></div>
             </div>
         </div>
 
-        <!-- Channels Section -->
-        <div class="section">
-            <div class="section-header">
-                <div>
-                    <span class="section-title">渠道管理</span>
-                    <span class="section-title-code">/admin/channels</span>
+        <!-- Logs Tab -->
+        <div class="tab-content" id="tab-logs">
+            <!-- Logs Summary Stats -->
+            <div class="logs-summary-stats" id="logs-summary"></div>
+
+            <div class="section">
+                <div class="section-header">
+                    <div>
+                        <span class="section-title">用量日志</span>
+                        <span class="section-title-code">/stats/logs</span>
+                    </div>
+                    <div class="logs-controls">
+                        <select id="logs-days" onchange="loadLogs()">
+                            <option value="1">1天</option>
+                            <option value="7" selected>7天</option>
+                            <option value="30">30天</option>
+                        </select>
+                        <select id="logs-model" onchange="loadLogs()">
+                            <option value="">全部模型</option>
+                        </select>
+                        <select id="logs-status" onchange="loadLogs()">
+                            <option value="">全部状态</option>
+                            <option value="200">成功</option>
+                            <option value="499">取消</option>
+                            <option value="error">失败</option>
+                        </select>
+                    </div>
                 </div>
-                <button class="btn btn-primary" onclick="showChannelModal()">
-                    <span>+ 添加渠道</span>
-                </button>
-            </div>
-            <div class="table-container">
-                <table id="channels-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>名称</th>
-                            <th>协议</th>
-                            <th>模型</th>
-                            <th>状态</th>
-                            <th>延迟</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
+                <div class="table-container">
+                    <table id="logs-table">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>模型</th>
+                                <th>输入</th>
+                                <th>输出</th>
+                                <th>费用</th>
+                                <th>延迟</th>
+                                <th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="logs-pagination"></div>
             </div>
         </div>
 
-        <!-- Prices Section -->
-        <div class="section">
-            <div class="section-header">
-                <div>
-                    <span class="section-title">模型价格</span>
-                    <span class="section-title-code">$/M (每百万token)</span>
+        <!-- Keys Tab -->
+        <div class="tab-content" id="tab-keys">
+            <div class="section">
+                <div class="section-header">
+                    <div>
+                        <span class="section-title">API 密钥</span>
+                        <span class="section-title-code">/admin/keys</span>
+                    </div>
+                    <button class="btn btn-primary" onclick="showKeyModal()">
+                        <span>+ 新建密钥</span>
+                    </button>
                 </div>
-                <button class="btn btn-primary" onclick="showPriceModal()">
-                    <span>+ 添加价格</span>
-                </button>
+                <div class="table-container">
+                    <table id="keys-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>名称</th>
+                                <th>密钥</th>
+                                <th>状态</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
-            <div class="table-container">
-                <table id="prices-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>模型名称</th>
-                            <th>输入价格</th>
-                            <th>输出价格</th>
-                            <th>状态</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
+        </div>
+
+        <!-- Channels Tab -->
+        <div class="tab-content" id="tab-channels">
+            <div class="section">
+                <div class="section-header">
+                    <div>
+                        <span class="section-title">渠道管理</span>
+                        <span class="section-title-code">/admin/channels</span>
+                    </div>
+                    <button class="btn btn-primary" onclick="showChannelModal()">
+                        <span>+ 添加渠道</span>
+                    </button>
+                </div>
+                <div class="table-container">
+                    <table id="channels-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>名称</th>
+                                <th>协议</th>
+                                <th>模型</th>
+                                <th>状态</th>
+                                <th>延迟</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Prices Tab -->
+        <div class="tab-content" id="tab-prices">
+            <div class="section">
+                <div class="section-header">
+                    <div>
+                        <span class="section-title">模型价格</span>
+                        <span class="section-title-code">$/M (每百万token)</span>
+                    </div>
+                    <button class="btn btn-primary" onclick="showPriceModal()">
+                        <span>+ 添加价格</span>
+                    </button>
+                </div>
+                <div class="table-container">
+                    <table id="prices-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>模型名称</th>
+                                <th>输入价格</th>
+                                <th>输出价格</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </main>

@@ -26,8 +26,10 @@ async def lifespan(app: FastAPI):
     logger.info("Database initialized")
     UsageRecorder.init()
     logger.info("Usage recorder initialized")
-    # 启动用量记录后台任务
     task = asyncio.create_task(UsageRecorder.process_queue())
+    cleanup_task = asyncio.create_task(UsageRecorder.start_cleanup_task(
+        interval_hours=1, retention_days=90
+    ))
 
     # 安全检查：警告使用默认密钥
     if settings.encryption_key == "default_encryption_key_32_bytes!":
@@ -49,11 +51,17 @@ async def lifespan(app: FastAPI):
 
     # 关闭时清理
     logger.info("Shutting down bol-api server...")
+    await UsageRecorder.drain(timeout=5.0)
+    cleanup_task.cancel()
     task.cancel()
     try:
-        await task  # 等待任务真正取消
+        await task
     except asyncio.CancelledError:
-        pass  # 任务被取消是预期行为
+        pass
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
 
     from app.utils.http_client import AsyncHttpClient
     await AsyncHttpClient.close()

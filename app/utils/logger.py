@@ -178,15 +178,21 @@ class RequestLogger:
     def __init__(self, logger_name: str = "bol_api.request"):
         self.logger = logging.getLogger(logger_name)
 
+    @staticmethod
+    def _rid_str(request_id: str = None) -> str:
+        return f" | rid={request_id}" if request_id else ""
+
     def log_request(
-        self, endpoint: str, body: dict, api_key_id: int = None, extra: dict = None
+        self, endpoint: str, body: dict, api_key_id: int = None, extra: dict = None,
+        request_id: str = None,
     ):
         """Log incoming client request."""
         model = body.get("model", "unknown") if isinstance(body, dict) else "unknown"
         stream = body.get("stream", False) if isinstance(body, dict) else False
+        rid = self._rid_str(request_id)
         extra_info = f" | extra={extra}" if extra else ""
         self.logger.info(
-            f"[REQUEST] {endpoint} | model={model} | stream={stream} | api_key_id={api_key_id}{extra_info}"
+            f"[REQUEST] {endpoint} | model={model} | stream={stream} | api_key_id={api_key_id}{rid}{extra_info}"
         )
         if body:
             safe_body = _mask_sensitive(body)
@@ -203,12 +209,14 @@ class RequestLogger:
         tokens: int = 0,
         body: dict = None,
         extra: dict = None,
+        request_id: str = None,
     ):
         """Log upstream response (non-streaming)."""
+        rid = self._rid_str(request_id)
         extra_info = f" | extra={extra}" if extra else ""
         self.logger.info(
             f"[RESPONSE] {endpoint} | channel={channel_id} | model={model} | "
-            f"status={status_code} | latency={latency_ms}ms | tokens={tokens}{extra_info}"
+            f"status={status_code} | latency={latency_ms}ms | tokens={tokens}{rid}{extra_info}"
         )
         if body:
             safe_body = _mask_sensitive(body)
@@ -216,11 +224,13 @@ class RequestLogger:
             self.logger.debug(f"[RESP_BODY] {_truncate(body_str)}")
 
     def log_stream_start(
-        self, endpoint: str, channel_id: int, model: str, api_key_id: int = None
+        self, endpoint: str, channel_id: int, model: str, api_key_id: int = None,
+        request_id: str = None,
     ):
         """Log start of streaming request."""
+        rid = self._rid_str(request_id)
         self.logger.info(
-            f"[STREAM_START] {endpoint} | channel={channel_id} | model={model} | api_key_id={api_key_id}"
+            f"[STREAM_START] {endpoint} | channel={channel_id} | model={model} | api_key_id={api_key_id}{rid}"
         )
 
     def log_stream_end(
@@ -230,11 +240,13 @@ class RequestLogger:
         model: str,
         latency_ms: int,
         tokens: int = 0,
+        request_id: str = None,
     ):
         """Log end of streaming request."""
+        rid = self._rid_str(request_id)
         self.logger.info(
             f"[STREAM_END] {endpoint} | channel={channel_id} | model={model} | "
-            f"latency={latency_ms}ms | tokens={tokens}"
+            f"latency={latency_ms}ms | tokens={tokens}{rid}"
         )
 
     def log_error(
@@ -245,17 +257,21 @@ class RequestLogger:
         error: str,
         error_type: str = "ERROR",
         latency_ms: int = 0,
+        request_id: str = None,
     ):
         """Log error during request processing."""
+        rid = self._rid_str(request_id)
         self.logger.error(
             f"[{error_type}] {endpoint} | channel={channel_id} | model={model} | "
-            f"latency={latency_ms}ms | error={error}"
+            f"latency={latency_ms}ms | error={error}{rid}"
         )
 
     def log_fallback(
-        self, endpoint: str, failed_channel_id: int, model: str, reason: str
+        self, endpoint: str, failed_channel_id: int, model: str, reason: str,
+        request_id: str = None,
     ):
         """Log channel fallback attempt."""
+        rid = self._rid_str(request_id)
         self.logger.warning(
-            f"[FALLBACK] {endpoint} | failed_channel={failed_channel_id} | model={model} | reason={reason}"
+            f"[FALLBACK] {endpoint} | failed_channel={failed_channel_id} | model={model} | reason={reason}{rid}"
         )

@@ -1,4 +1,5 @@
 import hashlib
+import uuid
 import logging
 import asyncio
 from fastapi import Request
@@ -29,6 +30,9 @@ def setup_auth_middleware(app):
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next):
         path = request.url.path
+        # 为每个请求生成唯一 ID
+        request_id = str(uuid.uuid4())[:8]
+        request.state.request_id = request_id
 
         # 检查精确匹配
         if path in PUBLIC_EXACT:

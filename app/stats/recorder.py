@@ -1,11 +1,14 @@
 import asyncio
+import time
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import OperationalError
 from app.db.database import async_session
 from app.db.crud import create_usage_log, get_model_price
+from app.db.models import UsageLog
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +93,40 @@ class UsageRecorder:
                 raise
             except Exception as e:
                 logger.error(f"Error recording usage: {e}")
+
+    @classmethod
+    async def drain(cls, timeout: float = 5.0):
+        """等待队列清空，最多等待 timeout 秒"""
+        if cls._queue is None:
+            return
+        deadline = time.monotonic() + timeout
+        while not cls._queue.empty() and time.monotonic() < deadline:
+            await asyncio.sleep(0.1)
+
+    @classmethod
+    async def cleanup_old_logs(cls, retention_days: int = 90):
+        """清理超过保留期限的用量日志"""
+        try:
+            session = async_session()
+            try:
+                cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+                stmt = delete(UsageLog).where(UsageLog.timestamp < cutoff)
+                result = await session.execute(stmt)
+                await session.commit()
+                deleted = result.rowcount
+                if deleted > 0:
+                    logger.info(f"Cleaned up {deleted} usage logs older than {retention_days} days")
+            finally:
+                await session.close()
+        except Exception as e:
+            logger.warning(f"Cleanup task failed: {e}")
+
+    @classmethod
+    async def start_cleanup_task(cls, interval_hours: int = 1, retention_days: int = 90):
+        """启动定期清理后台任务"""
+        while True:
+            await asyncio.sleep(interval_hours * 3600)
+            await cls.cleanup_old_logs(retention_days)
 
 
 async def calculate_cost(session: AsyncSession, model: str, request_tokens: int, response_tokens: int) -> float:
