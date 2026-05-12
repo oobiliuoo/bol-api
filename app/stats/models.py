@@ -52,3 +52,24 @@ class ModelStatsResponse(BaseModel):
     total_error_rate: float = 0.0
     period: str
     hours: int
+
+
+class TrendDataPoint(BaseModel):
+    """单个时间桶的数据"""
+    time: str  # ISO 8601, e.g. "2026-05-12T14:00:00Z"
+    requests: int
+    tokens: int
+    cost: float
+
+
+class TrendSeries(BaseModel):
+    """一个模型的时间序列"""
+    model: str
+    data: List[TrendDataPoint]
+
+
+class TrendResponse(BaseModel):
+    """趋势图响应"""
+    granularity: str  # "hour" | "day"
+    hours: int
+    series: List[TrendSeries]
