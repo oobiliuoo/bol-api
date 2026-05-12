@@ -3,9 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, timedelta, timezone
 from app.db.database import get_db
-from app.db.crud import get_usage_logs, get_usage_summary, get_model_stats
+from app.db.crud import get_usage_logs, get_usage_summary, get_model_stats, get_trend_data
 from app.db.models import UsageLog
-from app.stats.models import UsageLogResponse, UsageSummaryResponse, ModelStatsResponse
+from app.stats.models import UsageLogResponse, UsageSummaryResponse, ModelStatsResponse, TrendResponse
 from app.config import settings
 from app.auth.jwt import verify_token
 
@@ -121,3 +121,14 @@ async def get_models_list(
     result = await db.execute(query)
     models = [row[0] for row in result.all()]
     return {"models": models}
+
+
+@router.get("/trend", response_model=TrendResponse)
+async def get_trend(
+    hours: int = Query(168, description="统计时长（小时）"),
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_admin)
+):
+    """获取按时间桶 + 模型分组的趋势数据"""
+    data = await get_trend_data(db, hours)
+    return TrendResponse(**data)
