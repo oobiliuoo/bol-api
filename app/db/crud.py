@@ -565,7 +565,7 @@ async def get_trend_data(session: AsyncSession, hours: int = 168) -> dict:
 
     颗粒度规则：
     - hours <= 24: 按小时桶
-    - hours >= 168: 按天桶
+    - hours > 24: 按天桶
     """
     start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
@@ -577,18 +577,20 @@ async def get_trend_data(session: AsyncSession, hours: int = 168) -> dict:
         time_format = "%Y-%m-%dT00:00:00"
         granularity = "day"
 
+    time_bucket_col = func.strftime(time_format, UsageLog.timestamp).label("time_bucket")
+
     # 按时间桶 + 模型分组聚合
     query = (
         select(
-            func.strftime(time_format, UsageLog.timestamp).label("time_bucket"),
+            time_bucket_col,
             UsageLog.model,
             func.count().label("requests"),
-            func.sum(UsageLog.request_tokens + UsageLog.response_tokens).label("tokens"),
+            func.sum(func.coalesce(UsageLog.request_tokens, 0) + func.coalesce(UsageLog.response_tokens, 0)).label("tokens"),
             func.sum(UsageLog.cost).label("cost"),
         )
         .where(UsageLog.timestamp >= start_time)
-        .group_by("time_bucket", UsageLog.model)
-        .order_by("time_bucket")
+        .group_by(time_bucket_col, UsageLog.model)
+        .order_by(time_bucket_col)
     )
 
     result = await session.execute(query)
