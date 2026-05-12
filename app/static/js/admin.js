@@ -919,6 +919,8 @@ async function loadModelStats(hours) {
                 </div>
             </div>
         `;
+        // 同时加载趋势图数据
+        loadTrendData(hours);
     } else {
         container.innerHTML = `
             <div class="model-empty-state">
@@ -927,6 +929,9 @@ async function loadModelStats(hours) {
                 <div class="empty-desc">开始调用 API 后将显示统计数据</div>
             </div>
         `;
+        // 清空趋势图
+        const trendContainer = document.querySelector('.trend-chart-section');
+        if (trendContainer) trendContainer.style.display = 'none';
     }
 }
 
@@ -1108,6 +1113,266 @@ function renderLogsPagination(total, page, totalPages) {
     container.innerHTML = html;
 }
 
+// Trend Chart
+let trendData = null;
+let currentTrendMetric = 'requests';
+const trendColors = [
+    '#00d9ff', '#7b61ff', '#ff00aa', '#ff8c00', '#00ff88',
+    '#ff3355', '#00aa88', '#aa00ff', '#88ff00', '#ff0088'
+];
+
+async function loadTrendData(hours) {
+    try {
+        const res = await fetchWithAuth(`/stats/trend?hours=${hours}`);
+        if (!res.ok) return;
+        trendData = await res.json();
+        const trendContainer = document.querySelector('.trend-chart-section');
+        if (trendContainer) trendContainer.style.display = '';
+        renderTrendChart(currentTrendMetric);
+    } catch (e) {
+        console.warn('Failed to load trend data:', e);
+    }
+}
+
+function renderTrendChart(metric) {
+    currentTrendMetric = metric;
+    const canvas = document.getElementById('trend-canvas');
+    const legendContainer = document.getElementById('trend-legend');
+    if (!canvas || !trendData || !trendData.series || trendData.series.length === 0) {
+        if (legendContainer) legendContainer.innerHTML = '';
+        return;
+    }
+
+    const wrapper = canvas.parentElement;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = wrapper.getBoundingClientRect();
+    const cssWidth = rect.width || wrapper.clientWidth;
+    const cssHeight = 220;
+
+    canvas.width = cssWidth * dpr;
+    canvas.height = cssHeight * dpr;
+    canvas.style.width = cssWidth + 'px';
+    canvas.style.height = cssHeight + 'px';
+
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    if (!canvas._seriesHidden) {
+        canvas._seriesHidden = {};
+        trendData.series.forEach(s => { canvas._seriesHidden[s.model] = false; });
+    }
+
+    drawTrendChart(ctx, cssWidth, cssHeight, trendData, metric, canvas._seriesHidden);
+    renderTrendLegend(legendContainer, trendData, canvas);
+}
+
+function drawTrendChart(ctx, width, height, data, metric, hiddenMap) {
+    const padding = { top: 20, right: 20, bottom: 36, left: 56 };
+    const chartW = width - padding.left - padding.right;
+    const chartH = height - padding.top - padding.bottom;
+
+    let allValues = [];
+    data.series.forEach(s => {
+        if (hiddenMap[s.model]) return;
+        s.data.forEach(d => allValues.push(d[metric]));
+    });
+
+    if (allValues.length === 0) {
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.font = '12px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('没有可见数据', width / 2, height / 2);
+        return;
+    }
+
+    const maxVal = Math.max(...allValues);
+    const roundedMax = roundUpNice(maxVal);
+
+    const firstSeries = data.series.find(s => !hiddenMap[s.model]) || data.series[0];
+    const times = firstSeries.data.map(d => new Date(d.time));
+    const minTime = times[0];
+    const maxTime = times[times.length - 1];
+    const timeRange = maxTime - minTime || 1;
+
+    ctx.clearRect(0, 0, width, height);
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.textAlign = 'right';
+
+    const gridLines = 5;
+    for (let i = 0; i <= gridLines; i++) {
+        const y = padding.top + (chartH / gridLines) * i;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(width - padding.right, y);
+        ctx.stroke();
+        const val = Math.round(roundedMax - (roundedMax / gridLines) * i);
+        ctx.fillText(formatTrendValue(val, metric), padding.left - 8, y + 4);
+    }
+
+    // X-axis labels
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.font = '10px JetBrains Mono, monospace';
+
+    const labelCount = Math.min(times.length, data.granularity === 'hour' ? 6 : 5);
+    const step = Math.max(1, Math.floor((times.length - 1) / (labelCount - 1)));
+
+    for (let i = 0; i < times.length; i += step) {
+        const x = padding.left + ((times[i] - minTime) / timeRange) * chartW;
+        const label = formatTrendTime(times[i], data.granularity);
+        ctx.fillText(label, x, height - padding.bottom + 16);
+    }
+
+    // Draw lines for each model
+    data.series.forEach((s, idx) => {
+        if (hiddenMap[s.model]) return;
+        const color = trendColors[idx % trendColors.length];
+        const points = s.data.map(d => ({
+            x: padding.left + ((new Date(d.time) - minTime) / timeRange) * chartW,
+            y: padding.top + chartH - (d[metric] / roundedMax) * chartH,
+        }));
+
+        // Area fill
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, padding.top + chartH);
+        points.forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.lineTo(points[points.length - 1].x, padding.top + chartH);
+        ctx.closePath();
+        ctx.fillStyle = hexToRgba(color, 0.1);
+        ctx.fill();
+
+        // Line
+        ctx.beginPath();
+        points.forEach((p, i) => {
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+        });
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        // Data dots
+        const dotInterval = Math.max(1, Math.floor(points.length / 15));
+        points.forEach((p, i) => {
+            if (i % dotInterval === 0 || i === points.length - 1) {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        });
+    });
+
+    canvas._trendData = { data, metric, hiddenMap, padding, chartW, chartH, minTime, timeRange, roundedMax };
+}
+
+function renderTrendLegend(container, data, canvas) {
+    if (!container) return;
+    let html = '';
+    data.series.forEach((s, idx) => {
+        const color = trendColors[idx % trendColors.length];
+        const hidden = canvas._seriesHidden[s.model] ? ' hidden' : '';
+        html += `
+            <div class="trend-legend-item${hidden}" data-model="${s.model}">
+                <span class="trend-legend-color" style="background: ${color};"></span>
+                ${s.model}
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+
+    container.querySelectorAll('.trend-legend-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const model = el.dataset.model;
+            canvas._seriesHidden[model] = !canvas._seriesHidden[model];
+            renderTrendChart(currentTrendMetric);
+        });
+    });
+}
+
+function switchTrendMetric(metric) {
+    currentTrendMetric = metric;
+    document.querySelectorAll('.trend-metric-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.metric === metric);
+    });
+    renderTrendChart(metric);
+}
+
+// Canvas mouse hover tooltip
+(function() {
+    const canvas = document.getElementById('trend-canvas');
+    if (!canvas) return;
+    const tooltip = document.createElement('div');
+    tooltip.className = 'trend-tooltip';
+    tooltip.id = 'trend-tooltip';
+    document.body.appendChild(tooltip);
+
+    canvas.addEventListener('mousemove', (e) => {
+        const data = canvas._trendData;
+        if (!data) { tooltip.style.display = 'none'; return; }
+
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+
+        const { data: trendResp, metric, hiddenMap, padding, chartW, chartH, minTime, timeRange, roundedMax } = data;
+        const firstVisible = trendResp.series.find(s => !hiddenMap[s.model]);
+        if (!firstVisible) { tooltip.style.display = 'none'; return; }
+
+        const times = firstVisible.data.map(d => new Date(d.time));
+        const relX = mouseX - padding.left;
+        const pct = relX / chartW;
+        const targetTime = minTime + pct * timeRange;
+
+        let nearestIdx = 0;
+        let nearestDist = Infinity;
+        times.forEach((t, i) => {
+            const dist = Math.abs(t - targetTime);
+            if (dist < nearestDist) { nearestDist = dist; nearestIdx = i; }
+        });
+
+        const timeLabel = firstVisible.data[nearestIdx].time;
+        let tipHtml = `<div class="tooltip-time">${timeLabel}</div>`;
+        trendResp.series.forEach((s, idx) => {
+            if (hiddenMap[s.model]) return;
+            const dp = s.data[nearestIdx];
+            if (!dp) return;
+            const color = trendColors[idx % trendColors.length];
+            const val = formatTrendValue(dp[metric], metric);
+            tipHtml += `
+                <div class="tooltip-row">
+                    <span class="tooltip-dot" style="background: ${color};"></span>
+                    <span>${s.model}: ${val}</span>
+                </div>
+            `;
+        });
+
+        tooltip.innerHTML = tipHtml;
+        tooltip.style.display = '';
+
+        let tx = e.clientX + 12;
+        let ty = e.clientY - 10;
+        if (tx + 200 > window.innerWidth) tx = e.clientX - 200;
+        if (ty < 0) ty = e.clientY + 20;
+        tooltip.style.left = tx + 'px';
+        tooltip.style.top = ty + 'px';
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+        tooltip.style.display = 'none';
+    });
+})();
+
 // Tab switching
 function switchTab(tabName) {
     // Update tab buttons
@@ -1176,4 +1441,37 @@ async function saveSettings() {
     } catch (e) {
         showToast('保存设置失败: ' + e.message, 'error');
     }
+}
+
+// ---- 趋势图工具函数 ----
+function roundUpNice(val) {
+    if (val <= 0) return 10;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(val)));
+    const normalized = val / magnitude;
+    if (normalized <= 1) return magnitude;
+    if (normalized <= 2) return 2 * magnitude;
+    if (normalized <= 5) return 5 * magnitude;
+    return 10 * magnitude;
+}
+
+function formatTrendValue(val, metric) {
+    if (metric === 'cost') return '$' + val.toFixed(4);
+    if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
+    if (val >= 1000) return (val / 1000).toFixed(1) + 'K';
+    return val.toString();
+}
+
+function formatTrendTime(date, granularity) {
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    if (granularity === 'day') return `${month}/${day}`;
+    const hour = String(date.getHours()).padStart(2, '0');
+    return `${month}/${day} ${hour}:00`;
+}
+
+function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
 }
