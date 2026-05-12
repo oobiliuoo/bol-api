@@ -1,0 +1,98 @@
+<h2>请求趋势图方案选哪个？</h2>
+<p class="subtitle">以下是在概览页面增加"请求量-时间趋势图"的几种可视化方案</p>
+
+<div class="section">
+  <h3>当前概览页布局</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding: 16px;">
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px;">
+        <div style="background: var(--bg-secondary); border-radius: 6px; padding: 12px; text-align: center;">
+          <div style="font-size: 18px; font-weight: bold; font-family: monospace; color: var(--accent-primary);">1,234</div>
+          <div style="font-size: 10px; color: var(--text-muted);">总请求</div>
+        </div>
+        <div style="background: var(--bg-secondary); border-radius: 6px; padding: 12px; text-align: center;">
+          <div style="font-size: 18px; font-weight: bold; font-family: monospace; color: var(--accent-primary);">89.2K</div>
+          <div style="font-size: 10px; color: var(--text-muted);">总 Tokens</div>
+        </div>
+        <div style="background: var(--bg-secondary); border-radius: 6px; padding: 12px; text-align: center;">
+          <div style="font-size: 18px; font-weight: bold; font-family: monospace; color: var(--accent-primary);">$0.42</div>
+          <div style="font-size: 10px; color: var(--text-muted);">总费用</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <div style="flex: 1;">
+          <div style="font-size: 11px; color: var(--accent-primary); margin-bottom: 8px;">请求趋势</div>
+          <div style="display: flex; align-items: flex-end; gap: 4px; height: 80px; padding: 8px 4px; background: var(--bg-tertiary); border-radius: 6px;">
+            <div style="flex: 1; background: var(--accent-primary); height: 30px; border-radius: 2px; opacity: 0.6;"></div>
+            <div style="flex: 1; background: var(--accent-primary); height: 45px; border-radius: 2px; opacity: 0.7;"></div>
+            <div style="flex: 1; background: var(--accent-primary); height: 60px; border-radius: 2px; opacity: 0.9;"></div>
+            <div style="flex: 1; background: var(--accent-primary); height: 35px; border-radius: 2px; opacity: 0.65;"></div>
+            <div style="flex: 1; background: var(--accent-primary); height: 70px; border-radius: 2px; opacity: 1;"></div>
+            <div style="flex: 1; background: var(--accent-primary); height: 50px; border-radius: 2px; opacity: 0.75;"></div>
+            <div style="flex: 1; background: var(--accent-primary); height: 40px; border-radius: 2px; opacity: 0.7;"></div>
+            <div style="flex: 1; background: var(--accent-primary); height: 55px; border-radius: 2px; opacity: 0.85;"></div>
+            <div style="flex: 1; background: var(--accent-primary); height: 65px; border-radius: 2px; opacity: 0.9;"></div>
+            <div style="flex: 1; background: var(--accent-primary); height: 42px; border-radius: 2px; opacity: 0.7;"></div>
+            <div style="flex: 1; background: var(--accent-primary); height: 58px; border-radius: 2px; opacity: 0.85;"></div>
+            <div style="flex: 1; background: var(--accent-primary); height: 48px; border-radius: 2px; opacity: 0.75;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="cards" style="grid-template-columns: repeat(3, 1fr);">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)" style="cursor: pointer;">
+    <div class="card-body">
+      <h3>方案 A: 简单柱状图</h3>
+      <p>纯 CSS 柱状图，沿用现有风格，日报/周报/月报切换</p>
+      <div style="margin-top: 12px;">
+        <div class="label">特点</div>
+        <ul style="font-size: 12px; margin: 4px 0 0 16px;">
+          <li>无需引入外部库</li>
+          <li>与现有模型柱状图风格一致</li>
+          <li>实现简单，代码量小</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="card" data-choice="b" onclick="toggleSelect(this)" style="cursor: pointer;">
+    <div class="card-body">
+      <h3>方案 B: Canvas 折线图</h3>
+      <p>用 Canvas 绘制平滑折线图，显示趋势更直观</p>
+      <div style="margin-top: 12px;">
+        <div class="label">特点</div>
+        <ul style="font-size: 12px; margin: 4px 0 0 16px;">
+          <li>趋势展示更清晰</li>
+          <li>可叠加多个数据系列</li>
+          <li>实现稍复杂，但效果更好</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="card" data-choice="c" onclick="toggleSelect(this)" style="cursor: pointer;">
+    <div class="card-body">
+      <h3>方案 C: 从零写画图</h3>
+      <p>用原生 JS + Canvas 从零写图表，不依赖外部库</p>
+      <div style="margin-top: 12px;">
+        <div class="label">特点</div>
+        <ul style="font-size: 12px; margin: 4px 0 0 16px;">
+          <li>零外部依赖</li>
+          <li>完全控制样式</li>
+          <li>实现较复杂</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>需要确认的问题</h3>
+  <p class="subtitle">请在终端回答</p>
+  <ol style="font-size: 13px;">
+    <li>趋势图的 X 轴按什么粒度？<strong>按小时</strong>（柱状）还是<strong>按天/日期</strong>（日/周/月）？</li>
+    <li>Y 轴显示什么指标？<strong>请求数</strong>、<strong>Token 消耗</strong>、<strong>费用</strong>？还是可以切换？</li>
+    <li>趋势图和现有的"模型用量统计"是什么关系？放在它的上方、下方，还是整合在一起？</li>
+  </ol>
+</div>

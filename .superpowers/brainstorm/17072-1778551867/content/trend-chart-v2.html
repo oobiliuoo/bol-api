@@ -1,0 +1,81 @@
+<h2>按模型分色的折线图方案</h2>
+<p class="subtitle">多个模型各自一条彩色折线，同一时间区间内对比趋势</p>
+
+<div class="mockup">
+  <div class="mockup-header" style="display: flex; justify-content: space-between;">
+    <span>请求趋势（按模型分色）</span>
+    <div style="display: flex; gap: 6px;">
+      <span class="mock-button" style="padding: 2px 8px; font-size: 10px; background: var(--accent-primary); color: #000;">请求数</span>
+      <span class="mock-button" style="padding: 2px 8px; font-size: 10px;">Tokens</span>
+      <span class="mock-button" style="padding: 2px 8px; font-size: 10px;">费用</span>
+    </div>
+  </div>
+  <div class="mockup-body" style="padding: 16px;">
+    <!-- Chart canvas mockup -->
+    <div style="width: 100%; height: 220px; background: var(--bg-tertiary); border-radius: 6px; padding: 16px 24px; position: relative;">
+      <svg width="100%" height="188" viewBox="0 0 600 188" preserveAspectRatio="none">
+        <!-- Multiple model lines -->
+        <polyline points="0,150 40,120 80,160 120,80 160,40 200,100 240,110 280,130 320,60 360,90 400,70 440,105 480,55 520,85 560,100"
+                  fill="none" stroke="#00d9ff" stroke-width="2.5" opacity="0.85"/>
+        <polyline points="0,155 40,135 80,165 120,110 160,70 200,115 240,120 280,140 320,90 360,105 400,85 440,115 480,75 520,100 560,110"
+                  fill="none" stroke="#7b61ff" stroke-width="2.5" opacity="0.85"/>
+        <polyline points="0,140 40,110 80,150 120,70 160,30 200,90 240,100 280,120 320,50 360,80 400,60 440,95 480,45 520,75 560,90"
+                  fill="none" stroke="#00ff88" stroke-width="2.5" opacity="0.85"/>
+        <polyline points="0,160 40,145 80,170 120,130 160,95 200,135 240,140 280,155 320,110 360,125 400,105 440,130 480,95 520,115 560,125"
+                  fill="none" stroke="#ff8c00" stroke-width="2.5" opacity="0.85" stroke-dasharray="6,3"/>
+      </svg>
+    </div>
+
+    <!-- Legend -->
+    <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; justify-content: center;">
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <div style="width: 12px; height: 3px; background: #00d9ff; border-radius: 2px;"></div>
+        <span style="font-size: 11px; color: var(--text-muted);">gpt-4o</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <div style="width: 12px; height: 3px; background: #7b61ff; border-radius: 2px;"></div>
+        <span style="font-size: 11px; color: var(--text-muted);">claude-sonnet-4</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <div style="width: 12px; height: 3px; background: #00ff88; border-radius: 2px;"></div>
+        <span style="font-size: 11px; color: var(--text-muted);">deepseek-v3</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <div style="width: 12px; height: 3px; background: #ff8c00; border-radius: 2px;"></div>
+        <span style="font-size: 11px; color: var(--text-muted);">其它</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>设计方案</h3>
+  <div class="section">
+    <h3>后端</h3>
+    <ul style="font-size: 13px;">
+      <li>新增 <code>GET /stats/trend?hours=N</code>，按 <strong>时间桶 + 模型</strong> 分组聚合</li>
+      <li>返回 <code>series[]</code> 数组，每项包含 <code>{model, color, data: [{time, requests, tokens, cost}]}</code></li>
+    </ul>
+  </div>
+  <div class="section">
+    <h3>前端</h3>
+    <ul style="font-size: 13px;">
+      <li>Canvas 绘制多条折线，每条线对应一个模型</li>
+      <li>取 Top N 模型单独显示，其余合并为"其它"</li>
+      <li>图例显示模型名 + 颜色标识，可点击切换显示/隐藏</li>
+      <li>指标切换：请求数 / Tokens / 费用 三个按钮</li>
+    </ul>
+  </div>
+  <div class="section">
+    <h3>布局</h3>
+    <ul style="font-size: 13px;">
+      <li>趋势图位于"模型用量统计"下方</li>
+      <li>与模型统计共用同一组时间按钮（5时/日/周/月）</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section">
+  <h3>这个方案可以吗？</h3>
+  <p class="subtitle">在终端回复确认或提出修改</p>
+</div>
