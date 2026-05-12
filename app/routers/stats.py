@@ -70,7 +70,7 @@ async def get_logs(
                 request_tokens=log.request_tokens,
                 response_tokens=log.response_tokens,
                 cost=log.cost,
-                timestamp=log.timestamp.isoformat(),
+                timestamp=log.timestamp.strftime('%Y-%m-%dT%H:%M:%SZ'),
                 endpoint=log.endpoint,
                 status_code=log.status_code,
                 latency_ms=log.latency_ms
