@@ -558,3 +558,85 @@ async def get_all_settings(session: AsyncSession) -> dict:
     """获取所有配置"""
     result = await session.execute(select(SystemSetting))
     return {s.key: s.value for s in result.scalars().all()}
+
+
+async def get_trend_data(session: AsyncSession, hours: int = 168) -> dict:
+    """获取按时间桶 + 模型分组的趋势数据
+
+    颗粒度规则：
+    - hours <= 24: 按小时桶
+    - hours >= 168: 按天桶
+    """
+    start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    # 按颗粒度选择时间格式化
+    if hours <= 24:
+        time_format = "%Y-%m-%dT%H:00:00"
+        granularity = "hour"
+    else:
+        time_format = "%Y-%m-%dT00:00:00"
+        granularity = "day"
+
+    # 按时间桶 + 模型分组聚合
+    query = (
+        select(
+            func.strftime(time_format, UsageLog.timestamp).label("time_bucket"),
+            UsageLog.model,
+            func.count().label("requests"),
+            func.sum(UsageLog.request_tokens + UsageLog.response_tokens).label("tokens"),
+            func.sum(UsageLog.cost).label("cost"),
+        )
+        .where(UsageLog.timestamp >= start_time)
+        .group_by("time_bucket", UsageLog.model)
+        .order_by("time_bucket")
+    )
+
+    result = await session.execute(query)
+    rows = result.all()
+
+    # 将扁平结果重构为按 model 分组的 series
+    model_data = {}  # model -> list of data points
+    for row in rows:
+        if row.model not in model_data:
+            model_data[row.model] = []
+        model_data[row.model].append({
+            "time": row.time_bucket + "Z",
+            "requests": row.requests or 0,
+            "tokens": row.tokens or 0,
+            "cost": round(row.cost or 0.0, 6),
+        })
+
+    # 按总请求数排序，取 Top 8
+    model_totals = [(m, sum(d["requests"] for d in data)) for m, data in model_data.items()]
+    model_totals.sort(key=lambda x: x[1], reverse=True)
+    top_models = [m for m, _ in model_totals[:8]]
+
+    # 构建 series：Top 8 单独，其余合并为"其他"
+    series = []
+    for model in top_models:
+        series.append({
+            "model": model,
+            "data": model_data[model],
+        })
+
+    # 合并其他模型
+    other_data = {}
+    for model, data in model_data.items():
+        if model not in top_models:
+            for dp in data:
+                t = dp["time"]
+                if t not in other_data:
+                    other_data[t] = {"time": t, "requests": 0, "tokens": 0, "cost": 0.0}
+                other_data[t]["requests"] += dp["requests"]
+                other_data[t]["tokens"] += dp["tokens"]
+                other_data[t]["cost"] += dp["cost"]
+
+    if other_data:
+        other_list = sorted(other_data.values(), key=lambda x: x["time"])
+        series.append({"model": "其他", "data": other_list})
+
+    return {
+        "granularity": granularity,
+        "hours": hours,
+        "series": series,
+    }
