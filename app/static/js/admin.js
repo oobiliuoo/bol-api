@@ -1332,7 +1332,7 @@ function switchTrendMetric(metric) {
         const times = firstVisible.data.map(d => new Date(d.time));
         const relX = mouseX - padding.left;
         const pct = relX / chartW;
-        const targetTime = minTime + pct * timeRange;
+        const targetTime = minTime.getTime() + pct * timeRange;
 
         let nearestIdx = 0;
         let nearestDist = Infinity;
