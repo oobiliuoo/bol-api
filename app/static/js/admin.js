@@ -1274,7 +1274,7 @@ function drawTrendChart(ctx, width, height, data, metric, hiddenMap) {
         });
     });
 
-    canvas._trendData = { data, metric, hiddenMap, padding, chartW, chartH, minTime, timeRange, roundedMax };
+    ctx.canvas._trendData = { data, metric, hiddenMap, padding, chartW, chartH, minTime, timeRange, roundedMax };
 }
 
 function renderTrendLegend(container, data, canvas) {
