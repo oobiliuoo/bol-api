@@ -1358,7 +1358,7 @@ function switchTrendMetric(metric) {
         });
 
         tooltip.innerHTML = tipHtml;
-        tooltip.style.display = '';
+        tooltip.style.display = 'block';
 
         let tx = e.clientX + 12;
         let ty = e.clientY - 10;
