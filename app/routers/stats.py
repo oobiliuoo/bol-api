@@ -101,11 +101,12 @@ async def get_summary(
 @router.get("/models", response_model=ModelStatsResponse)
 async def get_model_stats_route(
     hours: int = Query(168, description="统计时长（小时）"),
+    period: str = Query(None, description="日历周期: today/week/month"),
     db: AsyncSession = Depends(get_db),
     _: bool = Depends(verify_admin)
 ):
     """获取按模型分组的统计数据"""
-    stats = await get_model_stats(db, hours)
+    stats = await get_model_stats(db, hours, period=period)
     return ModelStatsResponse(**stats)
 
 
@@ -126,9 +127,10 @@ async def get_models_list(
 @router.get("/trend", response_model=TrendResponse)
 async def get_trend(
     hours: int = Query(168, description="统计时长（小时）"),
+    period: str = Query(None, description="日历周期: today/week/month"),
     db: AsyncSession = Depends(get_db),
     _: bool = Depends(verify_admin)
 ):
     """获取按时间桶 + 模型分组的趋势数据"""
-    data = await get_trend_data(db, hours)
+    data = await get_trend_data(db, hours, period=period)
     return TrendResponse(**data)

@@ -749,29 +749,38 @@ async function deletePrice(id) {
     });
 }
 
+// 日历周期映射
+const PERIOD_MAP = {
+    'today': { hours: 24, label: '本日', apiPeriod: 'today' },
+    'week':  { hours: 168, label: '本周', apiPeriod: 'week' },
+    'month': { hours: 720, label: '本月', apiPeriod: 'month' },
+};
+
 // Model Stats
 async function loadModelStats(hours) {
     const tabs = document.querySelectorAll('.period-tab-inline');
-    tabs.forEach(tab => {
-        tab.classList.remove('active');
-        if (tab.textContent === '5时' && hours === 5) {
-            tab.classList.add('active');
-        } else if (tab.textContent === '日' && hours === 24) {
-            tab.classList.add('active');
-        } else if (tab.textContent === '周' && hours === 168) {
-            tab.classList.add('active');
-        } else if (tab.textContent === '月' && hours === 720) {
-            tab.classList.add('active');
-        }
-    });
+    tabs.forEach(tab => { tab.classList.remove('active'); });
 
-    document.getElementById('model-stats-period').textContent = hours < 24 ? `${hours}时` : `${hours / 24}天`;
+    let periodParam = '';
+    if (typeof hours === 'string') {
+        const p = PERIOD_MAP[hours];
+        if (p) {
+            document.getElementById('model-stats-period').textContent = p.label;
+            periodParam = `&period=${p.apiPeriod}`;
+            tabs.forEach(tab => { if (tab.textContent === p.label) tab.classList.add('active'); });
+        }
+    } else {
+        document.getElementById('model-stats-period').textContent = hours < 24 ? `${hours}时` : `${hours / 24}天`;
+        tabs.forEach(tab => {
+            if (tab.textContent === '5时' && hours === 5) tab.classList.add('active');
+        });
+    }
 
     const container = document.getElementById('model-stats-container');
 
     let data;
     try {
-        const res = await fetchWithAuth(`/stats/models?hours=${hours}`);
+        const res = await fetchWithAuth(`/stats/models?hours=${hours}${periodParam}`);
         if (!res.ok) { container.innerHTML = '<div class="error-banner show">加载模型统计数据失败</div>'; return; }
         data = await res.json();
     } catch (e) {
@@ -925,7 +934,7 @@ async function loadModelStats(hours) {
         container.innerHTML = `
             <div class="model-empty-state">
                 <div class="empty-icon">📭</div>
-                <div class="empty-title">近 ${data.period} 无请求记录</div>
+                <div class="empty-title">${data.period} 无请求记录</div>
                 <div class="empty-desc">开始调用 API 后将显示统计数据</div>
             </div>
         `;
@@ -1122,8 +1131,12 @@ const trendColors = [
 ];
 
 async function loadTrendData(hours) {
+    let periodParam = '';
+    if (typeof hours === 'string' && PERIOD_MAP[hours]) {
+        periodParam = `&period=${PERIOD_MAP[hours].apiPeriod}`;
+    }
     try {
-        const res = await fetchWithAuth(`/stats/trend?hours=${hours}`);
+        const res = await fetchWithAuth(`/stats/trend?hours=${hours}${periodParam}`);
         if (!res.ok) return;
         trendData = await res.json();
         const trendContainer = document.querySelector('.trend-chart-section');
@@ -1397,7 +1410,7 @@ function switchTab(tabName) {
 
 // Initialize
 loadStats();
-loadModelStats(168);
+loadModelStats('today');
 loadKeys();
 loadChannels();
 loadPrices();

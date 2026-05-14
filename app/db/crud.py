@@ -331,9 +331,47 @@ async def get_usage_summary(
     }
 
 
-async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
-    """获取按模型分组的统计数据（p50 延迟 + 峰值延迟）"""
-    start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+def _calc_start_time(period: str) -> tuple[datetime, str]:
+    """根据日历周期计算起始时间和显示标签
+
+    Args:
+        period: "today", "week", "month"
+
+    Returns:
+        (start_time, label)
+    """
+    now = datetime.now(timezone.utc)
+    if period == "today":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        label = "本日"
+    elif period == "week":
+        # 本周一 00:00 UTC
+        days_since_monday = now.weekday()
+        start = (now - timedelta(days=days_since_monday)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        label = "本周"
+    elif period == "month":
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        label = "本月"
+    else:
+        raise ValueError(f"Unknown period: {period}")
+    return start, label
+
+
+async def get_model_stats(session: AsyncSession, hours: int = 168, period: str = None) -> dict:
+    """获取按模型分组的统计数据（p50 延迟 + 峰值延迟）
+
+    period 不为空时优先使用日历周期，忽略 hours 参数。
+    """
+    if period:
+        start_time, period_label = _calc_start_time(period)
+    else:
+        start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+        if hours < 24:
+            period_label = f"{hours}h"
+        else:
+            period_label = f"{hours // 24}d"
 
     # 1. 主聚合查询
     query = (
@@ -439,11 +477,6 @@ async def get_model_stats(session: AsyncSession, hours: int = 168) -> dict:
 
     # 总体错误率
     total_error_rate = round(total_errors / total_requests * 100, 1) if total_requests > 0 else 0.0
-
-    if hours < 24:
-        period_label = f"{hours}h"
-    else:
-        period_label = f"{hours // 24}d"
 
     return {
         "stats": model_stats,
@@ -583,22 +616,30 @@ async def get_all_settings(session: AsyncSession) -> dict:
     return {s.key: s.value for s in result.scalars().all()}
 
 
-async def get_trend_data(session: AsyncSession, hours: int = 168) -> dict:
+async def get_trend_data(session: AsyncSession, hours: int = 168, period: str = None) -> dict:
     """获取按时间桶 + 模型分组的趋势数据
 
+    period 不为空时优先使用日历周期，忽略 hours 参数。
     颗粒度规则：
-    - hours <= 24: 按小时桶
-    - hours > 24: 按天桶
+    - today/<=24h: 按小时桶
+    - week/month/>24h: 按天桶
     """
-    start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
-
-    # 按颗粒度选择时间格式化
-    if hours <= 24:
-        time_format = "%Y-%m-%dT%H:00:00"
-        granularity = "hour"
+    if period:
+        start_time, _ = _calc_start_time(period)
+        if period == "today":
+            granularity = "hour"
+            time_format = "%Y-%m-%dT%H:00:00"
+        else:
+            granularity = "day"
+            time_format = "%Y-%m-%dT00:00:00"
     else:
-        time_format = "%Y-%m-%dT00:00:00"
-        granularity = "day"
+        start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+        if hours <= 24:
+            time_format = "%Y-%m-%dT%H:00:00"
+            granularity = "hour"
+        else:
+            time_format = "%Y-%m-%dT00:00:00"
+            granularity = "day"
 
     time_bucket_col = func.strftime(time_format, UsageLog.timestamp).label("time_bucket")
 

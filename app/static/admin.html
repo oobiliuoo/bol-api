@@ -50,10 +50,10 @@
                         <span class="section-title-code" id="model-stats-period">7天</span>
                     </div>
                     <div class="period-tabs-inline">
-                        <button class="period-tab-inline active" onclick="loadModelStats(5)">5时</button>
-                        <button class="period-tab-inline" onclick="loadModelStats(24)">日</button>
-                        <button class="period-tab-inline" onclick="loadModelStats(168)">周</button>
-                        <button class="period-tab-inline" onclick="loadModelStats(720)">月</button>
+                        <button class="period-tab-inline" onclick="loadModelStats(5)">5时</button>
+                        <button class="period-tab-inline active" onclick="loadModelStats('today')">本日</button>
+                        <button class="period-tab-inline" onclick="loadModelStats('week')">本周</button>
+                        <button class="period-tab-inline" onclick="loadModelStats('month')">本月</button>
                     </div>
                 </div>
                 <div id="model-stats-container"></div>
