@@ -286,7 +286,7 @@ async def stream_chat_response(
                     data = json.loads(line[6:])
                     if data.get("choices"):
                         delta = data["choices"][0].get("delta", {})
-                        content = delta.get("content", "")
+                        content = delta.get("content") or ""
                         total_content += content
                     # 检查是否有 usage 信息（OpenAI stream_options.include_usage）
                     if data.get("usage"):
@@ -657,7 +657,7 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
                         data = json.loads(json_str)
                         if data.get("type") == "content_block_delta":
                             delta = data.get("delta", {})
-                            text = delta.get("text", "")
+                            text = delta.get("text") or ""
                             total_content += text
                         elif data.get("type") == "message_start":
                             usage = data.get("message", {}).get("usage", {})
