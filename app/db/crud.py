@@ -89,6 +89,10 @@ async def create_channel(
     await session.commit()
     await session.refresh(channel)
     ChannelCache.invalidate()  # 使缓存失效
+
+    # 自动将渠道中的模型同步到价格列表，默认价格为 0
+    await _sync_models_to_prices(session, models)
+
     return channel
 
 
@@ -142,6 +146,11 @@ async def update_channel(
         await session.commit()
         await session.refresh(channel)
         ChannelCache.invalidate()  # 使缓存失效
+
+        # 如果更新了模型列表，自动同步新模型到价格列表
+        if "models" in kwargs and kwargs["models"]:
+            await _sync_models_to_prices(session, kwargs["models"])
+
         return channel
     return None
 
@@ -460,6 +469,20 @@ async def create_model_price(
     await session.commit()
     await session.refresh(price)
     return price
+
+
+async def _sync_models_to_prices(session: AsyncSession, models: List[str]):
+    """将渠道中的模型自动同步到价格列表，已存在的跳过"""
+    from sqlalchemy import select
+
+    for model in models:
+        result = await session.execute(
+            select(ModelPrice).where(ModelPrice.model == model)
+        )
+        if not result.scalar_one_or_none():
+            session.add(ModelPrice(model=model, input_price=0.0, output_price=0.0))
+    if models:
+        await session.commit()
 
 
 async def get_all_model_prices(session: AsyncSession) -> List[ModelPrice]:
