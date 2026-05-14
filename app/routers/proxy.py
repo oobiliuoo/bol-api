@@ -315,19 +315,14 @@ async def stream_chat_response(
         )
 
         # 在流结束后使用新的session记录用量
-        async with async_session() as db:
-            cost = await calculate_cost(db, model, prompt_tokens, completion_tokens)
-            await UsageRecorder.record(
-                api_key_id=api_key_id,
-                channel_id=channel.id,
-                provider=channel.provider_type,
-                model=model,
-                endpoint="/v1/chat/completions",
-                request_tokens=prompt_tokens,
-                response_tokens=completion_tokens,
-                cost=cost,
-                latency_ms=latency_ms,
-            )
+        # 使用 shield 防止 Starlette 在流结束后取消后置记录
+        try:
+            await asyncio.shield(_record_stream_usage(
+                api_key_id, channel, model, prompt_tokens, completion_tokens,
+                latency_ms, "/v1/chat/completions"
+            ))
+        except asyncio.CancelledError:
+            pass  # 流已完成，记录失败不影响功能
 
     except asyncio.CancelledError:
         # 客户端断开连接，记录已发往上游的请求
@@ -698,19 +693,14 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
         )
 
         # 在流结束后使用新的session记录用量
-        async with async_session() as db:
-            cost = await calculate_cost(db, model, input_tokens, output_tokens)
-            await UsageRecorder.record(
-                api_key_id=api_key_id,
-                channel_id=channel.id,
-                provider=channel.provider_type,
-                model=model,
-                endpoint="/v1/messages",
-                request_tokens=input_tokens,
-                response_tokens=output_tokens,
-                cost=cost,
-                latency_ms=latency_ms,
-            )
+        # 使用 shield 防止 Starlette 在流结束后取消后置记录
+        try:
+            await asyncio.shield(_record_stream_usage(
+                api_key_id, channel, model, input_tokens, output_tokens,
+                latency_ms, "/v1/messages"
+            ))
+        except asyncio.CancelledError:
+            pass  # 流已完成，记录失败不影响功能
 
     except asyncio.CancelledError:
         # 客户端断开连接，记录已发往上游的请求
@@ -775,3 +765,22 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
         }
         yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
         yield "data: [DONE]\n\n"
+
+
+async def _record_stream_usage(
+    api_key_id, channel, model, request_tokens, response_tokens, latency_ms, endpoint
+):
+    """流结束后记录用量（shield 保护，防止 CancelledError 中断）"""
+    async with async_session() as db:
+        cost = await calculate_cost(db, model, request_tokens, response_tokens)
+        await UsageRecorder.record(
+            api_key_id=api_key_id,
+            channel_id=channel.id,
+            provider=channel.provider_type,
+            model=model,
+            endpoint=endpoint,
+            request_tokens=request_tokens,
+            response_tokens=response_tokens,
+            cost=cost,
+            latency_ms=latency_ms,
+        )
