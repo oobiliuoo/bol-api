@@ -757,17 +757,24 @@ const PERIOD_MAP = {
 };
 
 // Model Stats
+let currentPeriod = '';  // 当前日历周期，同步给趋势图
+let lastStatsPeriod = 'today';  // 最近选择的周期，自动刷新时沿用
+
 async function loadModelStats(hours) {
+    lastStatsPeriod = hours;  // 记录当前选择，供自动刷新使用
     const tabs = document.querySelectorAll('.period-tab-inline');
     tabs.forEach(tab => { tab.classList.remove('active'); });
 
     let periodParam = '';
+    currentPeriod = '';
     if (typeof hours === 'string') {
         const p = PERIOD_MAP[hours];
         if (p) {
             document.getElementById('model-stats-period').textContent = p.label;
             periodParam = `&period=${p.apiPeriod}`;
             tabs.forEach(tab => { if (tab.textContent === p.label) tab.classList.add('active'); });
+            currentPeriod = p.apiPeriod;
+            hours = p.hours;
         }
     } else {
         document.getElementById('model-stats-period').textContent = hours < 24 ? `${hours}时` : `${hours / 24}天`;
@@ -929,7 +936,7 @@ async function loadModelStats(hours) {
             </div>
         `;
         // 同时加载趋势图数据
-        loadTrendData(hours);
+        loadTrendData(hours, currentPeriod);
     } else {
         container.innerHTML = `
             <div class="model-empty-state">
@@ -1130,11 +1137,8 @@ const trendColors = [
     '#ff3355', '#00aa88', '#aa00ff', '#88ff00', '#ff0088'
 ];
 
-async function loadTrendData(hours) {
-    let periodParam = '';
-    if (typeof hours === 'string' && PERIOD_MAP[hours]) {
-        periodParam = `&period=${PERIOD_MAP[hours].apiPeriod}`;
-    }
+async function loadTrendData(hours, period) {
+    let periodParam = period ? `&period=${period}` : '';
     try {
         const res = await fetchWithAuth(`/stats/trend?hours=${hours}${periodParam}`);
         if (!res.ok) return;
@@ -1415,9 +1419,9 @@ loadKeys();
 loadChannels();
 loadPrices();
 
-// Refresh stats periodically
+// Refresh stats periodically（沿用当前周期选择）
 setInterval(loadStats, 30000);
-setInterval(() => loadModelStats(168), 30000);
+setInterval(() => loadModelStats(lastStatsPeriod), 30000);
 
 // Settings
 async function showSettingsModal() {

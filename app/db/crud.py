@@ -279,16 +279,14 @@ async def get_usage_logs(
 async def get_usage_summary(
     session: AsyncSession, api_key_id: Optional[int] = None, days: int = 7
 ) -> dict:
-    """获取用量统计摘要（使用 SQL 聚合）"""
-    start_time = datetime.now(timezone.utc) - timedelta(days=days)
-
-    # 使用 SQL 聚合函数
+    """获取用量统计摘要（全量汇总，不受 days 参数限制）"""
+    # 全量统计
     query = select(
         func.count().label("total_requests"),
         func.sum(UsageLog.request_tokens).label("total_request_tokens"),
         func.sum(UsageLog.response_tokens).label("total_response_tokens"),
         func.sum(UsageLog.cost).label("total_cost"),
-    ).where(UsageLog.timestamp >= start_time)
+    )
 
     if api_key_id:
         query = query.where(UsageLog.api_key_id == api_key_id)
@@ -300,11 +298,11 @@ async def get_usage_summary(
     total_response_tokens = row.total_response_tokens or 0
     total_tokens = total_request_tokens + total_response_tokens
 
-    # 计算实际活跃时间窗口（第一条到最后一条日志的时间差）
+    # 全量时间跨度（用于追踪天数和 RPM/TPM 计算）
     time_query = select(
         func.min(UsageLog.timestamp).label("first_time"),
         func.max(UsageLog.timestamp).label("last_time"),
-    ).where(UsageLog.timestamp >= start_time)
+    )
     if api_key_id:
         time_query = time_query.where(UsageLog.api_key_id == api_key_id)
 
@@ -314,8 +312,10 @@ async def get_usage_summary(
     if time_row.first_time and time_row.last_time:
         delta = time_row.last_time - time_row.first_time
         active_minutes = max(1, int(delta.total_seconds() / 60))
+        actual_days = max(1, round(delta.total_seconds() / 86400))
     else:
         active_minutes = days * 24 * 60
+        actual_days = days
 
     return {
         "total_requests": row.total_requests or 0,
@@ -323,7 +323,7 @@ async def get_usage_summary(
         "total_response_tokens": total_response_tokens,
         "total_tokens": total_tokens,
         "total_cost": row.total_cost or 0.0,
-        "days": days,
+        "days": actual_days,
         "rpm": round((row.total_requests or 0) / active_minutes, 2)
         if active_minutes > 0
         else 0.0,
