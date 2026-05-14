@@ -27,7 +27,7 @@ uvicorn app.main:app --reload
 ```
 
 4. 访问管理界面
-打开 http://localhost:8000/admin
+打开 http://localhost:8088/admin
 
 ## API端点
 - `/v1/chat/completions` - OpenAI兼容聊天API

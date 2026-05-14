@@ -13,10 +13,10 @@ bol-api is a large language model API relay station that proxies requests to mul
 pip install -r requirements.txt
 
 # Run development server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8088
 
 # Run production server
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8088
 ```
 
 ## Architecture
