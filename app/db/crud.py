@@ -359,19 +359,33 @@ def _calc_start_time(period: str) -> tuple[datetime, str]:
     return start, label
 
 
-async def get_model_stats(session: AsyncSession, hours: int = 168, period: str = None) -> dict:
+async def get_model_stats(
+    session: AsyncSession, hours: int = 168, period: str = None,
+    start_time: datetime = None, end_time: datetime = None
+) -> dict:
     """获取按模型分组的统计数据（p50 延迟 + 峰值延迟）
 
-    period 不为空时优先使用日历周期，忽略 hours 参数。
+    优先级：start_time/end_time > period > hours
     """
-    if period:
+    if start_time:
+        end = end_time or datetime.now(timezone.utc)
+        span_hours = (end - start_time).total_seconds() / 3600
+        period_label = "自定义"
+    elif period:
         start_time, period_label = _calc_start_time(period)
+        end = datetime.now(timezone.utc)
     else:
         start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+        end = datetime.now(timezone.utc)
         if hours < 24:
             period_label = f"{hours}h"
         else:
             period_label = f"{hours // 24}d"
+
+    # 构建时间过滤条件
+    time_conditions = [UsageLog.timestamp >= start_time]
+    if end_time:
+        time_conditions.append(UsageLog.timestamp <= end_time)
 
     # 1. 主聚合查询
     query = (
@@ -382,16 +396,16 @@ async def get_model_stats(session: AsyncSession, hours: int = 168, period: str =
             func.sum(UsageLog.response_tokens).label("response_tokens"),
             func.sum(UsageLog.cost).label("cost"),
         )
-        .where(UsageLog.timestamp >= start_time)
+        .where(*time_conditions)
         .group_by(UsageLog.model)
     )
 
     result = await session.execute(query)
     rows = result.all()
 
-    # 2. 获取所有延迟值（用于计算 p50 和峰值）
+    # 2. 获取所有延迟值
     latency_query = select(UsageLog.model, UsageLog.latency_ms).where(
-        UsageLog.timestamp >= start_time, UsageLog.latency_ms > 0
+        UsageLog.latency_ms > 0, *time_conditions
     )
     latency_result = await session.execute(latency_query)
 
@@ -406,7 +420,7 @@ async def get_model_stats(session: AsyncSession, hours: int = 168, period: str =
             UsageLog.status_code,
             func.count().label("count")
         )
-        .where(UsageLog.timestamp >= start_time)
+        .where(*time_conditions)
         .group_by(UsageLog.model, UsageLog.status_code)
     )
     status_result = await session.execute(status_query)
@@ -616,15 +630,26 @@ async def get_all_settings(session: AsyncSession) -> dict:
     return {s.key: s.value for s in result.scalars().all()}
 
 
-async def get_trend_data(session: AsyncSession, hours: int = 168, period: str = None) -> dict:
+async def get_trend_data(
+    session: AsyncSession, hours: int = 168, period: str = None,
+    start_time: datetime = None, end_time: datetime = None
+) -> dict:
     """获取按时间桶 + 模型分组的趋势数据
 
-    period 不为空时优先使用日历周期，忽略 hours 参数。
-    颗粒度规则：
-    - today/<=24h: 按小时桶
-    - week/month/>24h: 按天桶
+    优先级：start_time/end_time > period > hours
+    颗粒度：自定义范围按小时/天取决于跨度
     """
-    if period:
+    if start_time:
+        end = end_time or datetime.now(timezone.utc)
+        span_hours = (end - start_time).total_seconds() / 3600
+        hours = round(span_hours)  # 用实际跨度覆盖 hours 参数
+        if span_hours <= 24:
+            time_format = "%Y-%m-%dT%H:00:00"
+            granularity = "hour"
+        else:
+            time_format = "%Y-%m-%dT00:00:00"
+            granularity = "day"
+    elif period:
         start_time, _ = _calc_start_time(period)
         if period == "today":
             granularity = "hour"
@@ -644,18 +669,22 @@ async def get_trend_data(session: AsyncSession, hours: int = 168, period: str = 
     time_bucket_col = func.strftime(time_format, UsageLog.timestamp).label("time_bucket")
 
     # 按时间桶 + 模型分组聚合
-    query = (
-        select(
-            time_bucket_col,
-            UsageLog.model,
-            func.count().label("requests"),
-            func.sum(func.coalesce(UsageLog.request_tokens, 0) + func.coalesce(UsageLog.response_tokens, 0)).label("tokens"),
-            func.sum(UsageLog.cost).label("cost"),
-        )
-        .where(UsageLog.timestamp >= start_time)
-        .group_by(time_bucket_col, UsageLog.model)
-        .order_by(time_bucket_col)
+    query = select(
+        time_bucket_col,
+        UsageLog.model,
+        func.count().label("requests"),
+        func.sum(func.coalesce(UsageLog.request_tokens, 0) + func.coalesce(UsageLog.response_tokens, 0)).label("tokens"),
+        func.sum(UsageLog.cost).label("cost"),
+    ).where(
+        UsageLog.timestamp >= start_time
+    ).group_by(
+        time_bucket_col, UsageLog.model
+    ).order_by(
+        time_bucket_col
     )
+
+    if end_time:
+        query = query.where(UsageLog.timestamp <= end_time)
 
     result = await session.execute(query)
     rows = result.all()

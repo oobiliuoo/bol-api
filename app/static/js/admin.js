@@ -795,20 +795,40 @@ async function loadModelStats(hours) {
         return;
     }
 
-    const maxRequests = data.stats && data.stats.length > 0 ? data.stats[0].requests : 1;
+    const trendUrl = `/stats/trend?hours=${hours}${periodParam}`;
+    renderStatsAndTrend(container, data);
+    if (data.stats && data.stats.length > 0) {
+        loadTrendData(hours, currentPeriod);
+    }
+}
 
+async function loadModelStatsData(modelsUrl, trendUrl) {
+    const container = document.getElementById('model-stats-container');
+    let data;
+    try {
+        const res = await fetchWithAuth(modelsUrl);
+        if (!res.ok) { container.innerHTML = '<div class="error-banner show">加载失败</div>'; return; }
+        data = await res.json();
+    } catch (e) {
+        container.innerHTML = `<div class="error-banner show">加载失败: ${e.message}</div>`;
+        return;
+    }
+    renderStatsAndTrend(container, data);
+    if (data.stats && data.stats.length > 0 && trendUrl) {
+        loadTrendData(trendUrl);
+    }
+}
+
+async function renderStatsAndTrend(container, data) {
+    const colors = [
+        '#00d9ff', '#7b61ff', '#ff00aa', '#ff8c00', '#00ff88',
+        '#ff3355', '#00aa88', '#aa00ff', '#88ff00', '#ff0088'
+    ];
     const totalInputTokens = data.stats ? data.stats.reduce((sum, s) => sum + s.request_tokens, 0) : 0;
     const totalOutputTokens = data.stats ? data.stats.reduce((sum, s) => sum + s.response_tokens, 0) : 0;
 
     if (data.stats && data.stats.length > 0) {
-        // 颜色数组用于图表
-        const colors = [
-            '#00d9ff', '#7b61ff', '#ff00aa', '#ff8c00', '#00ff88',
-            '#ff3355', '#00aa88', '#aa00ff', '#88ff00', '#ff0088'
-        ];
-
         container.innerHTML = `
-            <!-- 汇总统计卡片 -->
             <div class="model-summary-grid">
                 <div class="model-summary-card">
                     <div class="summary-icon">📊</div>
@@ -935,8 +955,7 @@ async function loadModelStats(hours) {
                 </div>
             </div>
         `;
-        // 同时加载趋势图数据
-        loadTrendData(hours, currentPeriod);
+        // 趋势图由调用者通过 loadTrendData 加载
     } else {
         container.innerHTML = `
             <div class="model-empty-state">
@@ -1138,9 +1157,15 @@ const trendColors = [
 ];
 
 async function loadTrendData(hours, period) {
-    let periodParam = period ? `&period=${period}` : '';
+    let url;
+    if (typeof hours === 'string' && hours.startsWith('/')) {
+        url = hours;  // 直接传入完整 URL
+    } else {
+        let periodParam = period ? `&period=${period}` : '';
+        url = `/stats/trend?hours=${hours}${periodParam}`;
+    }
     try {
-        const res = await fetchWithAuth(`/stats/trend?hours=${hours}${periodParam}`);
+        const res = await fetchWithAuth(url);
         if (!res.ok) return;
         trendData = await res.json();
         const trendContainer = document.querySelector('.trend-chart-section');
@@ -1412,6 +1437,62 @@ function switchTab(tabName) {
     if (tabName === 'prices') loadPrices();
 }
 
+// 自定义时间段
+function toggleCustomPeriod() {
+    const picker = document.getElementById('custom-period-picker');
+    const tabs = document.querySelectorAll('.period-tab-inline');
+    tabs.forEach(t => t.classList.remove('active'));
+
+    if (picker.classList.contains('show')) {
+        picker.classList.remove('show');
+        // 恢复默认高亮
+        tabs.forEach(t => { if (t.textContent === '本日') t.classList.add('active'); });
+        loadModelStats('today');
+        return;
+    }
+
+    // 设置默认值：近1小时
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 3600000);
+    document.getElementById('custom-start').value = oneHourAgo.toISOString().slice(0, 16);
+    document.getElementById('custom-end').value = now.toISOString().slice(0, 16);
+    picker.classList.add('show');
+    // 高亮"自定义"按钮
+    tabs.forEach(t => { if (t.textContent === '自定义') t.classList.add('active'); });
+}
+
+function toUTCDate(localStr) {
+    if (!localStr) return null;
+    return new Date(localStr);
+}
+
+async function applyCustomPeriod() {
+    const startStr = document.getElementById('custom-start').value;
+    const endStr = document.getElementById('custom-end').value;
+    if (!startStr || !endStr) {
+        showToast('请选择起止时间', 'warning');
+        return;
+    }
+    const start = toUTCDate(startStr);
+    const end = toUTCDate(endStr);
+    if (end <= start) {
+        showToast('结束时间必须晚于开始时间', 'warning');
+        return;
+    }
+    const spanHours = (end - start) / 3600000;
+    const tabs = document.querySelectorAll('.period-tab-inline');
+    tabs.forEach(t => t.classList.remove('active'));
+    tabs.forEach(t => { if (t.textContent === '自定义') t.classList.add('active'); });
+    document.getElementById('model-stats-period').textContent = '自定义';
+    window._customRange = { start: start.toISOString(), end: end.toISOString() };
+    currentPeriod = 'custom';
+    lastStatsPeriod = 'custom';
+    await loadModelStatsData(
+        `/stats/models?hours=${Math.round(spanHours)}&start_time=${start.toISOString()}&end_time=${end.toISOString()}`,
+        `/stats/trend?hours=${Math.round(spanHours)}&start_time=${start.toISOString()}&end_time=${end.toISOString()}`
+    );
+}
+
 // Initialize
 loadStats();
 loadModelStats('today');
@@ -1419,9 +1500,9 @@ loadKeys();
 loadChannels();
 loadPrices();
 
-// Refresh stats periodically（沿用当前周期选择）
+// Refresh stats periodically（沿用当前周期选择，自定义时段不自动刷新）
 setInterval(loadStats, 30000);
-setInterval(() => loadModelStats(lastStatsPeriod), 30000);
+setInterval(() => { if (lastStatsPeriod !== 'custom') loadModelStats(lastStatsPeriod); }, 30000);
 
 // Settings
 async function showSettingsModal() {

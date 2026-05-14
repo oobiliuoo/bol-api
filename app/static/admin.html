@@ -51,9 +51,17 @@
                     </div>
                     <div class="period-tabs-inline">
                         <button class="period-tab-inline" onclick="loadModelStats(5)">5时</button>
-                        <button class="period-tab-inline active" onclick="loadModelStats('today')">本日</button>
+                        <button class="period-tab-inline" onclick="loadModelStats('today')">本日</button>
                         <button class="period-tab-inline" onclick="loadModelStats('week')">本周</button>
                         <button class="period-tab-inline" onclick="loadModelStats('month')">本月</button>
+                        <button class="period-tab-inline" onclick="toggleCustomPeriod()">自定义</button>
+                    </div>
+                    <div id="custom-period-picker" style="display: none; margin-top: 12px; gap: 8px; align-items: center;">
+                        <input type="datetime-local" id="custom-start">
+                        <span style="color: var(--text-muted);">至</span>
+                        <input type="datetime-local" id="custom-end">
+                        <button class="btn btn-sm" onclick="applyCustomPeriod()">应用</button>
+                    </div>
                     </div>
                 </div>
                 <div id="model-stats-container"></div>
