@@ -307,8 +307,8 @@
                 </div>
                 <div class="form-group">
                     <label>模型（逗号分隔，留空表示全部）</label>
-                    <div style="display: flex; gap: 8px; align-items: stretch;">
-                        <input type="text" id="channel-models" placeholder="gpt-4, gpt-3.5-turbo" style="flex: 1;">
+                    <div style="display: flex; gap: 8px; align-items: flex-start;">
+                        <textarea id="channel-models" placeholder="gpt-4, gpt-3.5-turbo, claude-3-opus" rows="3" style="flex: 1; resize: vertical;"></textarea>
                         <button class="btn" id="fetch-models-btn" onclick="fetchModels()" style="white-space: nowrap;">
                             <span>↻ 拉取</span>
                         </button>

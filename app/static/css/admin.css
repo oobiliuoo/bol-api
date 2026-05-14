@@ -1209,7 +1209,8 @@ tr:hover td {
 }
 
 .form-group input,
-.form-group select {
+.form-group select,
+.form-group textarea {
     width: 100%;
     padding: 12px 14px;
     background: var(--bg-elevated);
@@ -1222,14 +1223,47 @@ tr:hover td {
     outline: none;
 }
 
+.form-group textarea {
+    resize: vertical;
+    min-height: 72px;
+    max-height: 300px;
+    line-height: 1.6;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+.form-group textarea::-webkit-scrollbar {
+    width: 6px;
+}
+
+.form-group textarea::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.form-group textarea::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+.form-group textarea::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-primary);
+}
+
+.form-group textarea::-webkit-resizer {
+    background: var(--border);
+    border-radius: 2px;
+}
+
 .form-group input:focus,
-.form-group select:focus {
+.form-group select:focus,
+.form-group textarea:focus {
     border-color: var(--accent-primary);
     box-shadow: 0 0 20px var(--glow-primary);
     background: rgba(0, 217, 255, 0.05);
 }
 
-.form-group input::placeholder {
+.form-group input::placeholder,
+.form-group textarea::placeholder {
     color: var(--text-muted);
     opacity: 0.5;
 }
