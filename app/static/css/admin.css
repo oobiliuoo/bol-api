@@ -2048,6 +2048,10 @@ body .scanline-overlay {
     text-decoration: line-through;
 }
 
+.trend-legend-item.trend-legend-dash {
+    font-weight: 600;
+}
+
 .trend-legend-color {
     width: 14px;
     height: 3px;

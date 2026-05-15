@@ -1176,6 +1176,23 @@ async function loadTrendData(hours, period) {
     }
 }
 
+function computeTotalSeries(data) {
+    const timeMap = {};
+    for (const s of data.series) {
+        if (s.model === '总请求') continue;
+        for (const d of s.data) {
+            if (!timeMap[d.time]) {
+                timeMap[d.time] = { time: d.time, requests: 0, tokens: 0, cost: 0.0 };
+            }
+            timeMap[d.time].requests += d.requests || 0;
+            timeMap[d.time].tokens += d.tokens || 0;
+            timeMap[d.time].cost += (d.cost || 0);
+        }
+    }
+    const sortedData = Object.values(timeMap).sort((a, b) => a.time.localeCompare(b.time));
+    return { model: '总请求', data: sortedData };
+}
+
 function renderTrendChart(metric) {
     currentTrendMetric = metric;
     const canvas = document.getElementById('trend-canvas');
@@ -1202,6 +1219,14 @@ function renderTrendChart(metric) {
     if (!canvas._seriesHidden) {
         canvas._seriesHidden = {};
         trendData.series.forEach(s => { canvas._seriesHidden[s.model] = false; });
+    }
+
+    // 注入总请求线（如果不存在）
+    const totalIdx = trendData.series.findIndex(s => s.model === '总请求');
+    if (totalIdx === -1) {
+        const totalSeries = computeTotalSeries(trendData);
+        trendData.series.push(totalSeries);
+        canvas._seriesHidden['总请求'] = false;
     }
 
     drawTrendChart(ctx, cssWidth, cssHeight, trendData, metric, canvas._seriesHidden);
@@ -1274,44 +1299,68 @@ function drawTrendChart(ctx, width, height, data, metric, hiddenMap) {
     // Draw lines for each model
     data.series.forEach((s, idx) => {
         if (hiddenMap[s.model]) return;
-        const color = trendColors[idx % trendColors.length];
+        const isTotal = s.model === '总请求';
+        const color = isTotal ? '#ffd700' : trendColors[idx % trendColors.length];
         const points = s.data.map(d => ({
             x: padding.left + ((new Date(d.time) - minTime) / timeRange) * chartW,
             y: padding.top + chartH - (d[metric] / roundedMax) * chartH,
         }));
 
-        // Area fill
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, padding.top + chartH);
-        points.forEach(p => ctx.lineTo(p.x, p.y));
-        ctx.lineTo(points[points.length - 1].x, padding.top + chartH);
-        ctx.closePath();
-        ctx.fillStyle = hexToRgba(color, 0.1);
-        ctx.fill();
+        // Area fill (总请求线不填充区域)
+        if (!isTotal) {
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, padding.top + chartH);
+            points.forEach(p => ctx.lineTo(p.x, p.y));
+            ctx.lineTo(points[points.length - 1].x, padding.top + chartH);
+            ctx.closePath();
+            ctx.fillStyle = hexToRgba(color, 0.1);
+            ctx.fill();
+        }
 
         // Line
         ctx.beginPath();
+        if (isTotal) {
+            ctx.setLineDash([6, 4]);
+        } else {
+            ctx.setLineDash([]);
+        }
         points.forEach((p, i) => {
             if (i === 0) ctx.moveTo(p.x, p.y);
             else ctx.lineTo(p.x, p.y);
         });
         ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = isTotal ? 2.5 : 2;
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
         ctx.stroke();
+        ctx.setLineDash([]);
 
         // Data dots
         const dotInterval = Math.max(1, Math.floor(points.length / 15));
         points.forEach((p, i) => {
             if (i % dotInterval === 0 || i === points.length - 1) {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
-                ctx.fillStyle = color;
-                ctx.fill();
-                ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-                ctx.lineWidth = 1;
-                ctx.stroke();
+                if (isTotal) {
+                    // 菱形标记
+                    ctx.beginPath();
+                    ctx.moveTo(p.x, p.y - 4);
+                    ctx.lineTo(p.x + 4, p.y);
+                    ctx.lineTo(p.x, p.y + 4);
+                    ctx.lineTo(p.x - 4, p.y);
+                    ctx.closePath();
+                    ctx.fillStyle = color;
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = color;
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
             }
         });
     });
@@ -1323,11 +1372,13 @@ function renderTrendLegend(container, data, canvas) {
     if (!container) return;
     let html = '';
     data.series.forEach((s, idx) => {
-        const color = trendColors[idx % trendColors.length];
+        const isTotal = s.model === '总请求';
+        const color = isTotal ? '#ffd700' : trendColors[idx % trendColors.length];
         const hidden = canvas._seriesHidden[s.model] ? ' hidden' : '';
+        const dashClass = isTotal ? ' trend-legend-dash' : '';
         html += `
-            <div class="trend-legend-item${hidden}" data-model="${s.model}">
-                <span class="trend-legend-color" style="background: ${color};"></span>
+            <div class="trend-legend-item${hidden}${dashClass}" data-model="${s.model}">
+                <span class="trend-legend-color" style="background: ${color};${isTotal ? ' border-style: dashed; border-width: 1px 0; height: 1px;' : ''}"></span>
                 ${s.model}
             </div>
         `;
@@ -1337,7 +1388,24 @@ function renderTrendLegend(container, data, canvas) {
     container.querySelectorAll('.trend-legend-item').forEach(el => {
         el.addEventListener('click', () => {
             const model = el.dataset.model;
-            canvas._seriesHidden[model] = !canvas._seriesHidden[model];
+            if (model === '总请求') {
+                const allModels = trendData.series.map(s => s.model);
+                const otherModels = allModels.filter(m => m !== '总请求');
+                const othersAllHidden = otherModels.every(m => canvas._seriesHidden[m]);
+                if (canvas._seriesHidden['总请求']) {
+                    // 总请求被隐藏 → 显示总请求，隐藏其它
+                    canvas._seriesHidden['总请求'] = false;
+                    otherModels.forEach(m => { canvas._seriesHidden[m] = true; });
+                } else if (othersAllHidden) {
+                    // 只有总请求可见 → 恢复全部
+                    allModels.forEach(m => { canvas._seriesHidden[m] = false; });
+                } else {
+                    // 总请求可见且其它也可见 → 隐藏其它
+                    otherModels.forEach(m => { canvas._seriesHidden[m] = true; });
+                }
+            } else {
+                canvas._seriesHidden[model] = !canvas._seriesHidden[model];
+            }
             renderTrendChart(currentTrendMetric);
         });
     });
