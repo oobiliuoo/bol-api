@@ -1,4 +1,4 @@
-from typing import Dict, Any, AsyncIterator, List
+﻿from typing import Dict, Any, AsyncIterator, List
 import json
 from app.providers.base import BaseProvider
 from app.utils.http_client import AsyncHttpClient
@@ -17,10 +17,9 @@ class AnthropicProvider(BaseProvider):
         }
 
     async def chat_completion(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        url = f"{self.base_url}/v1/messages"
+        url = self._build_url("/v1/messages")
         headers = self.get_headers()
 
-        # 确保stream=False (Anthropic用stream参数)
         request = sanitize_request(request, "anthropic")
         request["stream"] = False
 
@@ -29,10 +28,9 @@ class AnthropicProvider(BaseProvider):
         return response.json()
 
     async def stream_chat_completion(self, request: Dict[str, Any]) -> AsyncIterator[str]:
-        url = f"{self.base_url}/v1/messages"
+        url = self._build_url("/v1/messages")
         headers = self.get_headers()
 
-        # 确保stream=True
         request = sanitize_request(request, "anthropic")
         request["stream"] = True
 

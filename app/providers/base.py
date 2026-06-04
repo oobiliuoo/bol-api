@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+﻿from abc import ABC, abstractmethod
 from typing import AsyncIterator, Dict, Any, List
 
 
@@ -9,20 +9,32 @@ class BaseProvider(ABC):
         self.models = models
         self.api_protocol = api_protocol
 
+    def _build_url(self, endpoint: str) -> str:
+        """Build request URL. If base_url already contains the endpoint path, use it directly.
+
+        For example:
+          base_url="https://api.openai.com" + endpoint="/v1/chat/completions"
+            -> "https://api.openai.com/v1/chat/completions"
+          base_url="https://host/v2/chat/completions" + endpoint="/v1/chat/completions"
+            -> "https://host/v2/chat/completions" (base_url already ends with the endpoint suffix)
+        """
+        # The suffix is the endpoint action, e.g. "/chat/completions" or "/messages"
+        # If base_url already ends with this suffix, don't append the default endpoint
+        suffix = endpoint.rsplit("/", 1)[-1]  # e.g. "completions" or "messages"
+        if self.base_url.endswith("/" + suffix):
+            return self.base_url
+        return f"{self.base_url}{endpoint}"
+
     @abstractmethod
     async def chat_completion(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """非流式聊天完成"""
         pass
 
     @abstractmethod
     async def stream_chat_completion(self, request: Dict[str, Any]) -> AsyncIterator[str]:
-        """流式聊天完成"""
         pass
 
     def get_models(self) -> List[str]:
-        """获取支持的模型列表"""
         return self.models
 
     def supports_model(self, model: str) -> bool:
-        """检查是否支持指定模型"""
-        return model in self.models or len(self.models) == 0  # 空列表表示支持所有模型
+        return model in self.models or len(self.models) == 0
