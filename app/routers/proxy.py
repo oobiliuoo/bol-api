@@ -196,21 +196,21 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                 latency_ms=latency_ms,
                 request_id=request_id,
             )
-            # 4xx错误不重试（请求本身有问题，换渠道也一样）
-            if status_code >= 500:
-                failed_channels.append(channel)
-                last_error = e
-                continue
-            await UsageRecorder.record(
-                api_key_id=api_key_id,
-                channel_id=channel.id,
-                provider=channel.provider_type,
-                model=model,
-                endpoint="/v1/chat/completions",
-                status_code=status_code,
-                latency_ms=latency_ms,
-            )
-            raise HTTPException(status_code=status_code, detail=detail)
+            # 4xx 或 5xx 中包含客户端错误信息时，不重试，直接返回给客户端
+            if status_code < 500 or _is_client_error_in_500(detail):
+                await UsageRecorder.record(
+                    api_key_id=api_key_id,
+                    channel_id=channel.id,
+                    provider=channel.provider_type,
+                    model=model,
+                    endpoint="/v1/chat/completions",
+                    status_code=status_code,
+                    latency_ms=latency_ms,
+                )
+                raise HTTPException(status_code=status_code, detail=detail)
+            failed_channels.append(channel)
+            last_error = e
+            continue
         except Exception as e:
             request_logger.log_error(
                 "/v1/chat/completions",
@@ -252,16 +252,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
         except asyncio.CancelledError:
             pass
 
-    if isinstance(last_error, httpx.TimeoutException):
-        raise HTTPException(status_code=504, detail="All channels timed out")
-    elif isinstance(last_error, httpx.ConnectError):
-        raise HTTPException(
-            status_code=502, detail=f"All channels failed to connect: {str(last_error)}"
-        )
-    else:
-        raise HTTPException(
-            status_code=503, detail="No available channel after fallback attempts"
-        )
+    _raise_fallback_exhausted(last_error)
 
 
 async def stream_chat_response(
@@ -336,6 +327,7 @@ async def stream_chat_response(
             error_type="STREAM_CANCELLED",
             latency_ms=latency_ms,
             request_id=request_id,
+            level="warning",
         )
         if prompt_tokens == 0:
             prompt_tokens = count_message_tokens(body.get("messages", []), model)
@@ -557,21 +549,21 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                 latency_ms=latency_ms,
                 request_id=request_id,
             )
-            # 4xx错误不重试（请求本身有问题，换渠道也一样）
-            if status_code >= 500:
-                failed_channels.append(channel)
-                last_error = e
-                continue
-            await UsageRecorder.record(
-                api_key_id=api_key_id,
-                channel_id=channel.id,
-                provider=channel.provider_type,
-                model=model,
-                endpoint="/v1/messages",
-                status_code=status_code,
-                latency_ms=latency_ms,
-            )
-            raise HTTPException(status_code=status_code, detail=detail)
+            # 4xx 或 5xx 中包含客户端错误信息时，不重试，直接返回给客户端
+            if status_code < 500 or _is_client_error_in_500(detail):
+                await UsageRecorder.record(
+                    api_key_id=api_key_id,
+                    channel_id=channel.id,
+                    provider=channel.provider_type,
+                    model=model,
+                    endpoint="/v1/messages",
+                    status_code=status_code,
+                    latency_ms=latency_ms,
+                )
+                raise HTTPException(status_code=status_code, detail=detail)
+            failed_channels.append(channel)
+            last_error = e
+            continue
         except Exception as e:
             request_logger.log_error(
                 "/v1/messages",
@@ -613,16 +605,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
         except asyncio.CancelledError:
             pass
 
-    if isinstance(last_error, httpx.TimeoutException):
-        raise HTTPException(status_code=504, detail="All channels timed out")
-    elif isinstance(last_error, httpx.ConnectError):
-        raise HTTPException(
-            status_code=502, detail=f"All channels failed to connect: {str(last_error)}"
-        )
-    else:
-        raise HTTPException(
-            status_code=503, detail="No available channel after fallback attempts"
-        )
+    _raise_fallback_exhausted(last_error)
 
 
 async def stream_anthropic_response(provider, body, channel, api_key_id, request):
@@ -714,6 +697,7 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
             error_type="STREAM_CANCELLED",
             latency_ms=latency_ms,
             request_id=request_id,
+            level="warning",
         )
         if input_tokens == 0:
             input_tokens = count_message_tokens(body.get("messages", []), model)
@@ -784,3 +768,40 @@ async def _record_stream_usage(
             cost=cost,
             latency_ms=latency_ms,
         )
+
+
+def _raise_fallback_exhausted(last_error):
+    """所有渠道都失败后，根据最后的错误类型抛出对应的 HTTPException"""
+    if isinstance(last_error, httpx.TimeoutException):
+        raise HTTPException(status_code=504, detail="All channels timed out")
+    elif isinstance(last_error, httpx.ConnectError):
+        raise HTTPException(
+            status_code=502, detail=f"All channels failed to connect: {str(last_error)}"
+        )
+    elif isinstance(last_error, httpx.HTTPStatusError):
+        detail = last_error.response.text if last_error.response else str(last_error)
+        raise HTTPException(status_code=last_error.response.status_code, detail=detail)
+    else:
+        raise HTTPException(
+            status_code=503, detail="No available channel after fallback attempts"
+        )
+
+
+# 部分中转服务（如讯飞）会将 400 Bad Request 包装成 500 返回
+# 检测 5xx 响应体中是否包含明确的客户端错误信号，避免无意义的 fallback 重试
+_CLIENT_ERROR_PATTERNS = (
+    "参数非法",
+    "参数错误",
+    "invalid parameter",
+    "invalid request",
+    "bad request",
+    "400 bad request",
+    "status code: 400",
+)
+
+
+def _is_client_error_in_500(detail: str) -> bool:
+    """检测 5xx 响应体是否实际是客户端错误（被中转层包装）"""
+    # 只检查前 500 字符，避免对大型响应体做完整 lower()
+    lower = detail[:500].lower()
+    return any(p in lower for p in _CLIENT_ERROR_PATTERNS)
