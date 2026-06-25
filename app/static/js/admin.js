@@ -115,14 +115,14 @@ async function loadStats() {
         if (!res.ok) { showToast('加载统计数据失败', 'error'); return; }
         const data = await res.json();
 
-        const avgTokens = data.total_requests > 0 ? Math.round(data.total_tokens / data.total_requests) : 0;
-        const avgCost = data.total_requests > 0 ? (data.total_cost / data.total_requests).toFixed(4) : '0.0000';
+        const avgTokens = data.total_success_requests > 0 ? Math.round(data.total_tokens / data.total_success_requests) : 0;
+        const avgCost = data.total_success_requests > 0 ? (data.total_cost / data.total_success_requests).toFixed(4) : '0.0000';
 
         document.getElementById('stats').innerHTML = `
             <div class="stat-card">
                 <div class="stat-icon">📊</div>
                 <div class="stat-content">
-                    <div class="stat-value">${data.total_requests}</div>
+                    <div class="stat-value">${data.total_success_requests}</div>
                     <div class="stat-label">总请求次数</div>
                     <div class="stat-detail">已追踪 ${data.days} 天</div>
                 </div>
@@ -164,7 +164,7 @@ async function loadStats() {
                 <div class="stat-content">
                     <div class="stat-value">${data.days}</div>
                     <div class="stat-label">追踪天数</div>
-                    <div class="stat-detail">日均 ${Math.round(data.total_requests / data.days)} 次请求</div>
+                    <div class="stat-detail">日均 ${Math.round(data.total_success_requests / data.days)} 次请求</div>
                 </div>
             </div>
         `;
@@ -837,7 +837,7 @@ async function renderStatsAndTrend(container, data) {
                 <div class="model-summary-card">
                     <div class="summary-icon">📊</div>
                     <div class="summary-content">
-                        <div class="summary-value">${data.total_requests}</div>
+                        <div class="summary-value">${data.total_success_requests}</div>
                         <div class="summary-label">总请求</div>
                     </div>
                 </div>
@@ -877,10 +877,10 @@ async function renderStatsAndTrend(container, data) {
                     </div>
                 </div>
                 <div class="model-summary-card">
-                    <div class="summary-icon" style="color: ${data.total_error_rate > 5 ? 'var(--accent-error)' : 'var(--accent-warning)'};">⚠</div>
+                    <div class="summary-icon" style="color: ${(data.total_requests - data.total_success_requests) / data.total_requests * 100 > 5 ? 'var(--accent-error)' : 'var(--accent-warning)'};">⚠</div>
                     <div class="summary-content">
-                        <div class="summary-value">${data.total_error_rate}%</div>
-                        <div class="summary-label">错误率 (${data.total_errors})</div>
+                        <div class="summary-value">${data.total_requests > 0 ? ((data.total_requests - data.total_success_requests) / data.total_requests * 100).toFixed(1) : 0}%</div>
+                        <div class="summary-label">错误率 (${data.total_requests - data.total_success_requests})</div>
                     </div>
                 </div>
             </div>

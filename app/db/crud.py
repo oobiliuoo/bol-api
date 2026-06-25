@@ -1,6 +1,6 @@
 import secrets
 import hashlib
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import APIKey, Channel, UsageLog, ModelPrice, SystemSetting
 from datetime import datetime, timedelta, timezone
@@ -280,9 +280,10 @@ async def get_usage_summary(
     session: AsyncSession, api_key_id: Optional[int] = None, days: int = 7
 ) -> dict:
     """获取用量统计摘要（全量汇总，不受 days 参数限制）"""
-    # 全量统计
+    # 全量统计（单次查询同时获取总请求数和成功请求数）
     query = select(
         func.count().label("total_requests"),
+        func.sum(case((UsageLog.status_code == 200, 1), else_=0)).label("total_success"),
         func.sum(UsageLog.request_tokens).label("total_request_tokens"),
         func.sum(UsageLog.response_tokens).label("total_response_tokens"),
         func.sum(UsageLog.cost).label("total_cost"),
@@ -297,6 +298,8 @@ async def get_usage_summary(
     total_request_tokens = row.total_request_tokens or 0
     total_response_tokens = row.total_response_tokens or 0
     total_tokens = total_request_tokens + total_response_tokens
+    total = row.total_requests or 0
+    total_success = int(row.total_success or 0)
 
     # 全量时间跨度（用于追踪天数和 RPM/TPM 计算）
     time_query = select(
@@ -318,13 +321,14 @@ async def get_usage_summary(
         actual_days = days
 
     return {
-        "total_requests": row.total_requests or 0,
+        "total_requests": total,
+        "total_success_requests": total_success,
         "total_request_tokens": total_request_tokens,
         "total_response_tokens": total_response_tokens,
         "total_tokens": total_tokens,
         "total_cost": row.total_cost or 0.0,
         "days": actual_days,
-        "rpm": round((row.total_requests or 0) / active_minutes, 2)
+        "rpm": round(total / active_minutes, 2)
         if active_minutes > 0
         else 0.0,
         "tpm": round(total_tokens / active_minutes, 2) if active_minutes > 0 else 0.0,
@@ -387,7 +391,7 @@ async def get_model_stats(
     if end_time:
         time_conditions.append(UsageLog.timestamp <= end_time)
 
-    # 1. 主聚合查询
+    # 1. 主聚合查询（统计所有请求）
     query = (
         select(
             UsageLog.model,
@@ -457,7 +461,8 @@ async def get_model_stats(
         # 计算错误数和错误率
         model_status = status_map.get(row.model, {})
         error_count = sum(c for code, c in model_status.items() if code != 200)
-        error_rate = round(error_count / row.requests * 100, 1) if row.requests > 0 else 0.0
+        total_count = sum(model_status.values())
+        error_rate = round(error_count / total_count * 100, 1) if total_count > 0 else 0.0
 
         model_stats.append(
             {
@@ -489,18 +494,14 @@ async def get_model_stats(
     total_p50 = all_latencies[len(all_latencies) // 2] if all_latencies else 0
     total_peak = all_latencies[-1] if all_latencies else 0
 
-    # 总体错误率
-    total_error_rate = round(total_errors / total_requests * 100, 1) if total_requests > 0 else 0.0
-
     return {
         "stats": model_stats,
         "total_requests": total_requests,
+        "total_success_requests": total_requests - total_errors,
         "total_tokens": total_tokens,
         "total_cost": total_cost,
         "total_p50": total_p50,
         "total_peak": total_peak,
-        "total_errors": total_errors,
-        "total_error_rate": total_error_rate,
         "period": period_label,
         "hours": hours,
     }
@@ -668,7 +669,7 @@ async def get_trend_data(
 
     time_bucket_col = func.strftime(time_format, UsageLog.timestamp).label("time_bucket")
 
-    # 按时间桶 + 模型分组聚合
+    # 按时间桶 + 模型分组聚合（只统计成功的请求：status_code == 200）
     query = select(
         time_bucket_col,
         UsageLog.model,
@@ -676,7 +677,8 @@ async def get_trend_data(
         func.sum(func.coalesce(UsageLog.request_tokens, 0) + func.coalesce(UsageLog.response_tokens, 0)).label("tokens"),
         func.sum(UsageLog.cost).label("cost"),
     ).where(
-        UsageLog.timestamp >= start_time
+        UsageLog.timestamp >= start_time,
+        UsageLog.status_code == 200,
     ).group_by(
         time_bucket_col, UsageLog.model
     ).order_by(

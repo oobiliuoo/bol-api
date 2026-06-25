@@ -319,7 +319,7 @@ async def stream_chat_response(
         # 客户端断开连接，记录已发往上游的请求
         # 保留已收到的 token 数据（上游可能已处理了部分请求）
         latency_ms = int((time.time() - start_time) * 1000)
-        request_logger.log_error(
+        request_logger.log_warning(
             "/v1/chat/completions",
             channel.id,
             model,
@@ -327,7 +327,6 @@ async def stream_chat_response(
             error_type="STREAM_CANCELLED",
             latency_ms=latency_ms,
             request_id=request_id,
-            level="warning",
         )
         if prompt_tokens == 0:
             prompt_tokens = count_message_tokens(body.get("messages", []), model)
@@ -689,7 +688,7 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
         # 客户端断开连接，记录已发往上游的请求
         # 保留已收到的 token 数据（上游可能已处理了部分请求）
         latency_ms = int((time.time() - start_time) * 1000)
-        request_logger.log_error(
+        request_logger.log_warning(
             "/v1/messages",
             channel.id,
             model,
@@ -697,7 +696,6 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
             error_type="STREAM_CANCELLED",
             latency_ms=latency_ms,
             request_id=request_id,
-            level="warning",
         )
         if input_tokens == 0:
             input_tokens = count_message_tokens(body.get("messages", []), model)

@@ -19,6 +19,7 @@ class UsageLogResponse(BaseModel):
 
 class UsageSummaryResponse(BaseModel):
     total_requests: int
+    total_success_requests: int = 0
     total_request_tokens: int
     total_response_tokens: int
     total_tokens: int
@@ -44,12 +45,11 @@ class ModelStat(BaseModel):
 class ModelStatsResponse(BaseModel):
     stats: List[ModelStat]
     total_requests: int
+    total_success_requests: int = 0
     total_tokens: int
     total_cost: float
     total_p50: int = 0
     total_peak: int = 0
-    total_errors: int = 0
-    total_error_rate: float = 0.0
     period: str
     hours: int
 

@@ -258,12 +258,27 @@ class RequestLogger:
         error_type: str = "ERROR",
         latency_ms: int = 0,
         request_id: str = None,
-        level: str = "error",
     ):
-        """Log error during request processing. Use level='warning' for client-side events like STREAM_CANCELLED."""
+        """Log error during request processing."""
         rid = self._rid_str(request_id)
-        log_fn = self.logger.warning if level == "warning" else self.logger.error
-        log_fn(
+        self.logger.error(
+            f"[{error_type}] {endpoint} | channel={channel_id} | model={model} | "
+            f"latency={latency_ms}ms | error={error}{rid}"
+        )
+
+    def log_warning(
+        self,
+        endpoint: str,
+        channel_id: int,
+        model: str,
+        error: str,
+        error_type: str = "WARNING",
+        latency_ms: int = 0,
+        request_id: str = None,
+    ):
+        """Log warning-level event (e.g. client-side STREAM_CANCELLED)."""
+        rid = self._rid_str(request_id)
+        self.logger.warning(
             f"[{error_type}] {endpoint} | channel={channel_id} | model={model} | "
             f"latency={latency_ms}ms | error={error}{rid}"
         )
