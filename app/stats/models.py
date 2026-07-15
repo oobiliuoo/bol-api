@@ -33,6 +33,7 @@ class UsageSummaryResponse(BaseModel):
 class ModelStat(BaseModel):
     model: str
     requests: int
+    success_requests: int = 0
     request_tokens: int
     response_tokens: int
     cost: float

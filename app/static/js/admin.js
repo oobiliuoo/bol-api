@@ -890,7 +890,7 @@ async function renderStatsAndTrend(container, data) {
                 <div class="chart-title">请求分布</div>
                 <div class="model-bar-chart">
                     ${data.stats.slice(0, 10).map((s, i) => {
-                        const percentage = Math.round((s.requests / data.total_requests) * 100);
+                        const percentage = data.total_success_requests > 0 ? Math.round((s.success_requests / data.total_success_requests) * 100) : 0;
                         const width = Math.max(percentage, 3);
                         const color = colors[i % colors.length];
                         return `
@@ -901,7 +901,7 @@ async function renderStatsAndTrend(container, data) {
                                         <span class="chart-bar-value">${percentage}%</span>
                                     </div>
                                 </div>
-                                <div class="chart-count">${s.requests}</div>
+                                <div class="chart-count">${s.success_requests}</div>
                             </div>
                         `;
                     }).join('')}

@@ -468,6 +468,7 @@ async def get_model_stats(
             {
                 "model": row.model,
                 "requests": row.requests,
+                "success_requests": row.requests - error_count,
                 "request_tokens": req_tokens,
                 "response_tokens": resp_tokens,
                 "cost": cost,
