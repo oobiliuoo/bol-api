@@ -350,6 +350,9 @@ async def stream_chat_response(
         error_msg = str(e)
         latency_ms = int((time.time() - start_time) * 1000)
 
+        # 透传上游真实状态码和错误类型（HTTPStatusError 如 400 客户端错误）
+        status_code, error_obj = _extract_stream_error(e)
+
         request_logger.log_error(
             "/v1/chat/completions",
             channel.id,
@@ -367,12 +370,12 @@ async def stream_chat_response(
                 provider=channel.provider_type,
                 model=model,
                 endpoint="/v1/chat/completions",
-                status_code=500,
+                status_code=status_code,
                 latency_ms=latency_ms,
             )
 
         # 发送标准OpenAI格式的错误事件
-        error_data = {"error": {"message": error_msg, "type": "internal_error"}}
+        error_data = {"error": error_obj}
         yield f"data: {json.dumps(error_data)}\n\n"
         yield "data: [DONE]\n\n"
 
@@ -719,6 +722,9 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
         error_msg = str(e)
         latency_ms = int((time.time() - start_time) * 1000)
 
+        # 透传上游真实状态码和错误类型（HTTPStatusError 如 400 客户端错误）
+        status_code, error_obj = _extract_stream_error(e)
+
         request_logger.log_error(
             "/v1/messages",
             channel.id,
@@ -736,14 +742,14 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
                 provider=channel.provider_type,
                 model=model,
                 endpoint="/v1/messages",
-                status_code=500,
+                status_code=status_code,
                 latency_ms=latency_ms,
             )
 
         # 发送标准Anthropic格式的错误事件
         error_data = {
             "type": "error",
-            "error": {"type": "internal_error", "message": error_msg},
+            "error": error_obj,
         }
         yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
         yield "data: [DONE]\n\n"
@@ -803,3 +809,25 @@ def _is_client_error_in_500(detail: str) -> bool:
     # 只检查前 500 字符，避免对大型响应体做完整 lower()
     lower = detail[:500].lower()
     return any(p in lower for p in _CLIENT_ERROR_PATTERNS)
+
+
+def _extract_stream_error(e):
+    """从流式异常中提取真实状态码和上游错误对象（用于 SSE 错误事件）
+
+    流式路径的 HTTPStatusError 此前被统一包装成 500 + internal_error，
+    导致 400 客户端错误（如不支持的参数）被调用端误判为服务器故障而重试。
+    这里透传上游的真实状态码和错误类型。
+    """
+    if isinstance(e, httpx.HTTPStatusError) and e.response:
+        status_code = e.response.status_code
+        try:
+            data = e.response.json()
+        except Exception:
+            data = {}
+        error = data.get("error") or {}
+        if not isinstance(error, dict):
+            error = {"message": str(error)}
+        # 上游可能只返回 message 文本，确保 SSE 事件有完整的错误对象
+        error.setdefault("message", e.response.text[:500])
+        return status_code, error
+    return 500, {"message": str(e), "type": "internal_error"}

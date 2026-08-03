@@ -96,6 +96,9 @@ class AsyncHttpClient:
                         yield line  # 保留空行，SSE格式需要空行分隔事件
                     return  # 成功完成，退出重试循环
             except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+                # 4xx 客户端错误不重试（请求本身有问题，重试无意义）
+                if isinstance(e, httpx.HTTPStatusError) and e.response is not None and e.response.status_code < 500:
+                    raise
                 last_error = e
                 if attempt < retries:
                     await asyncio.sleep(1 + attempt)
