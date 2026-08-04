@@ -529,6 +529,13 @@ async function fetchModels() {
 function closeChannelModal() {
     editingChannelId = null;
     document.getElementById('channel-modal').classList.remove('show');
+    // 复位保存按钮状态，避免下次打开时仍为 disabled "保存中..."
+    const saveBtn = document.querySelector('#channel-modal .btn-primary');
+    if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存';
+        saveBtn.style.opacity = '1';
+    }
 }
 
 async function saveChannel() {
@@ -567,7 +574,8 @@ async function saveChannel() {
             return;
         }
 
-        if (editingChannelId) {
+        const isEditing = !!editingChannelId;
+        if (isEditing) {
             await fetchWithAuth(`/admin/channels/${editingChannelId}`, {
                 method: 'PATCH',
                 body: JSON.stringify(data)
@@ -579,7 +587,7 @@ async function saveChannel() {
             });
         }
         closeChannelModal();
-        showToast(editingChannelId ? '渠道已更新' : '渠道已创建', 'success');
+        showToast(isEditing ? '渠道已更新' : '渠道已创建', 'success');
         loadChannels();
     } catch (e) {
         showToast('保存失败: ' + e.message, 'error');
@@ -690,6 +698,12 @@ async function editPrice(id) {
 function closePriceModal() {
     editingPriceId = null;
     document.getElementById('price-modal').classList.remove('show');
+    const saveBtn = document.querySelector('#price-modal .btn-primary');
+    if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存';
+        saveBtn.style.opacity = '1';
+    }
 }
 
 async function savePrice() {
@@ -713,7 +727,8 @@ async function savePrice() {
 
         const data = { model, input_price: inputPrice, output_price: outputPrice };
 
-        if (editingPriceId) {
+        const isEditing = !!editingPriceId;
+        if (isEditing) {
             await fetchWithAuth(`/admin/prices/${editingPriceId}`, {
                 method: 'PATCH', body: JSON.stringify(data)
             });
@@ -723,7 +738,7 @@ async function savePrice() {
             });
         }
         closePriceModal();
-        showToast(editingPriceId ? '价格已更新' : '价格已创建', 'success');
+        showToast(isEditing ? '价格已更新' : '价格已创建', 'success');
         loadPrices();
     } catch (e) {
         showToast('保存失败: ' + e.message, 'error');
