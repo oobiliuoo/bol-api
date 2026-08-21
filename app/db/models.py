@@ -37,6 +37,7 @@ class Channel(Base):
     is_active = Column(Boolean, default=True)
     priority = Column(Integer, default=1)  # 优先级
     weight = Column(Float, default=1.0)  # 权重
+    prefix = Column(String(50), unique=True, nullable=True)  # 渠道唯一前缀，用于 `前缀/模型` 精确寻址
 
     usage_logs = relationship("UsageLog", back_populates="channel")
 

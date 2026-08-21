@@ -60,6 +60,14 @@ async def get_safe_session():
 Base = declarative_base()
 
 
+async def _ensure_column(conn, table: str, column: str, ddl: str):
+    """轻量迁移：如果表中不存在指定列则补充（SQLite ALTER TABLE）"""
+    cols = await conn.execute(text(f"PRAGMA table_info({table})"))
+    existing = {row[1] for row in cols.fetchall()}
+    if column not in existing:
+        await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {ddl}"))
+
+
 async def init_db():
     async with engine.begin() as conn:
         # 启用 WAL 模式 - 允许读写并发
@@ -72,6 +80,9 @@ async def init_db():
         await conn.execute(text("PRAGMA cache_size=-64000"))  # 64MB
 
         await conn.run_sync(Base.metadata.create_all)
+
+        # 轻量迁移：为已有表补充新列
+        await _ensure_column(conn, "channels", "prefix", "prefix VARCHAR(50)")
 
         # 为现有表添加索引（如果不存在）
         # SQLite 不支持 IF NOT EXISTS for CREATE INDEX，需要先检查

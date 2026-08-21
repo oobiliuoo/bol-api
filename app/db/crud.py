@@ -3,7 +3,7 @@ import hashlib
 from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import APIKey, Channel, UsageLog, ModelPrice, SystemSetting
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from typing import Optional, List, Union
 from app.utils.encryption import encrypt_key, decrypt_key, is_encrypted
 
@@ -72,6 +72,7 @@ async def create_channel(
     priority: int = 1,
     weight: float = 1.0,
     api_protocol: str = "openai",
+    prefix: Optional[str] = None,
 ) -> Channel:
     from app.channels.manager import ChannelCache
 
@@ -84,6 +85,7 @@ async def create_channel(
         models=models,
         priority=priority,
         weight=weight,
+        prefix=prefix or None,
     )
     session.add(channel)
     await session.commit()
@@ -128,6 +130,7 @@ CHANNEL_UPDATE_FIELDS = {
     "is_active",
     "priority",
     "weight",
+    "prefix",
 }
 
 
@@ -276,6 +279,37 @@ async def get_usage_logs(
     return logs
 
 
+async def _calc_tracking_days(
+    session: AsyncSession, first_log_time: Optional[datetime], fallback_days: int
+) -> int:
+    """计算追踪天数：优先使用独立的追踪起始日设置（不随日志清理变化）
+
+    1. 若配置了 tracking_start_date，返回 `今天 - 起始日 + 1`（含首尾的自然日跨度）
+    2. 否则回退到日志最早日期，并固化为设置（防止未来日志清理后起始日丢失）
+    3. 都没有则返回 fallback_days
+
+    这样即使 usage_logs 按 90 天滚动清理，追踪天数也不会缩水。
+    """
+    today = datetime.now(timezone.utc).date()
+
+    tracking_start = await get_setting(session, "tracking_start_date")
+    if tracking_start:
+        try:
+            start_date = date.fromisoformat(tracking_start.strip())
+            return max(1, (today - start_date).days + 1)
+        except ValueError:
+            pass  # 格式非法，回退到日志
+
+    if first_log_time:
+        start_date = first_log_time.date()
+        # 仅当尚未固化时写入，避免每次请求重复 UPDATE
+        if not tracking_start:
+            await set_setting(session, "tracking_start_date", start_date.isoformat())
+        return max(1, (today - start_date).days + 1)
+
+    return fallback_days
+
+
 async def get_usage_summary(
     session: AsyncSession, api_key_id: Optional[int] = None, days: int = 7
 ) -> dict:
@@ -315,10 +349,11 @@ async def get_usage_summary(
     if time_row.first_time and time_row.last_time:
         delta = time_row.last_time - time_row.first_time
         active_minutes = max(1, int(delta.total_seconds() / 60))
-        actual_days = max(1, round(delta.total_seconds() / 86400))
     else:
         active_minutes = days * 24 * 60
-        actual_days = days
+
+    # 追踪天数：优先使用独立起始日设置，避免随日志清理缩水
+    actual_days = await _calc_tracking_days(session, time_row.first_time, days)
 
     return {
         "total_requests": total,

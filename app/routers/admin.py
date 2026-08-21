@@ -81,7 +81,8 @@ async def create_channel_route(
         api_key=data.api_key,
         models=data.models,
         priority=data.priority,
-        weight=data.weight
+        weight=data.weight,
+        prefix=data.prefix,
     )
     return ChannelResponse(
         id=channel.id,
@@ -92,7 +93,8 @@ async def create_channel_route(
         models=channel.models,
         is_active=channel.is_active,
         priority=channel.priority,
-        weight=channel.weight
+        weight=channel.weight,
+        prefix=channel.prefix,
     )
 
 
@@ -113,7 +115,8 @@ async def list_channels(
             models=c.models,
             is_active=c.is_active,
             priority=c.priority,
-            weight=c.weight
+            weight=c.weight,
+            prefix=c.prefix,
         )
         for c in channels
     ]
@@ -139,7 +142,8 @@ async def update_channel_route(
         models=channel.models,
         is_active=channel.is_active,
         priority=channel.priority,
-        weight=channel.weight
+        weight=channel.weight,
+        prefix=channel.prefix,
     )
 
 

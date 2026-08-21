@@ -11,6 +11,7 @@ class ChannelCreate(BaseModel):
     models: List[str] = []
     priority: int = 1
     weight: float = 1.0
+    prefix: Optional[str] = None  # 渠道唯一前缀，用于 `前缀/模型` 精确寻址
 
     @model_validator(mode="after")
     def sync_api_protocol(self):
@@ -29,6 +30,7 @@ class ChannelUpdate(BaseModel):
     is_active: Optional[bool] = None
     priority: Optional[int] = None
     weight: Optional[float] = None
+    prefix: Optional[str] = None
 
     @model_validator(mode="after")
     def sync_api_protocol(self):
@@ -47,3 +49,4 @@ class ChannelResponse(BaseModel):
     is_active: bool
     priority: int
     weight: float
+    prefix: Optional[str] = None

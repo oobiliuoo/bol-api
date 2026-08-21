@@ -1075,6 +1075,26 @@ tr:hover td {
     box-shadow: 0 0 10px rgba(204, 133, 50, 0.4);
 }
 
+/* Channel prefix badge */
+.prefix-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.5px;
+    background: rgba(123, 97, 255, 0.12);
+    color: var(--accent-secondary);
+    border: 1px solid rgba(123, 97, 255, 0.4);
+    white-space: nowrap;
+}
+
+.prefix-badge:hover {
+    box-shadow: 0 0 10px var(--glow-secondary);
+}
+
 .provider-custom {
     background: rgba(123, 97, 255, 0.1);
     color: var(--accent-secondary);

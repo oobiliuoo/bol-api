@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db, async_session
-from app.channels.manager import ChannelManager, create_provider
+from app.channels.manager import ChannelManager, create_provider, parse_model_reference
 from app.stats.recorder import UsageRecorder, calculate_cost
 from app.providers.openai import OpenAIProvider
 from app.providers.anthropic import AnthropicProvider
@@ -32,14 +32,18 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
     if not model:
         raise HTTPException(status_code=400, detail="Missing model parameter")
 
+    # 解析前缀命名空间：`前缀/模型名` → 锁定渠道（仅已注册前缀才拆分）
+    known_prefixes = await ChannelManager.get_registered_prefixes(db)
+    prefix, real_model = parse_model_reference(model, known_prefixes)
+
     api_key_id = getattr(request.state, "api_key_id", None)
     request_id = getattr(request.state, "request_id", None)
     start_time = time.time()
 
     request_logger.log_request("/v1/chat/completions", body, api_key_id=api_key_id, request_id=request_id)
 
-    # 获取所有支持该模型的渠道用于fallback
-    all_channels = await ChannelManager.select_all_channels(db, model, protocol="openai")
+    # 获取所有支持该模型（真实模型名）的渠道用于fallback
+    all_channels = await ChannelManager.select_all_channels(db, real_model, protocol="openai", prefix=prefix)
     if not all_channels:
         request_logger.log_error(
             "/v1/chat/completions",
@@ -60,7 +64,7 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
     for attempt in range(min(MAX_FALLBACK_ATTEMPTS, len(all_channels))):
         # 选择渠道（排除已失败的）
         channel = await ChannelManager.select_channel(
-            db, model, exclude_ids=[c.id for c in failed_channels], protocol="openai"
+            db, real_model, exclude_ids=[c.id for c in failed_channels], protocol="openai", prefix=prefix
         )
         if not channel:
             break
@@ -73,16 +77,20 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
             request_id=request_id,
         )
         provider = create_provider(channel)
-        if not provider.supports_model(model):
+        if not provider.supports_model(real_model):
             request_logger.log_fallback(
                 "/v1/chat/completions",
                 channel.id,
                 model,
-                reason=f"provider does not support model {model}",
+                reason=f"provider does not support model {real_model}",
                 request_id=request_id,
             )
             failed_channels.append(channel)
             continue
+
+        # 构建上游请求体：模型名还原为真实名
+        upstream_body = dict(body)
+        upstream_body["model"] = real_model
 
         try:
             if stream:
@@ -92,12 +100,13 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                 )
                 return StreamingResponse(
                     stream_chat_response(
-                        provider, body, channel, api_key_id, request, failed_channels
+                        provider, upstream_body, channel, api_key_id, request, failed_channels,
+                        requested_model=model,
                     ),
                     media_type="text/event-stream",
                 )
             else:
-                response = await provider.chat_completion(body)
+                response = await provider.chat_completion(upstream_body)
                 latency_ms = int((time.time() - start_time) * 1000)
 
                 # 提取用量
@@ -114,9 +123,9 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
                     request_id=request_id,
                 )
 
-                # 记录用量
+                # 记录用量：model=请求名（带前缀区分渠道），价格=真实模型名
                 cost = await calculate_cost(
-                    db, model, usage["request_tokens"], usage["response_tokens"]
+                    db, real_model, usage["request_tokens"], usage["response_tokens"]
                 )
                 await UsageRecorder.record(
                     api_key_id=api_key_id,
@@ -256,12 +265,18 @@ async def chat_completions(request: Request, db: AsyncSession = Depends(get_db))
 
 
 async def stream_chat_response(
-    provider, body, channel, api_key_id, request, failed_channels=None
+    provider, body, channel, api_key_id, request, failed_channels=None,
+    requested_model=None,
 ):
-    """流式响应处理"""
+    """流式响应处理
+
+    body: 上游请求体（model=真实模型名用于token估计和provider）
+    requested_model: 客户端请求的模型名（可能带前缀），用于用量记录
+    """
     start_time = time.time()
     total_content = ""
-    model = body.get("model")
+    model = body.get("model")  # 真实模型名，用于 token 估计
+    recorded_model = requested_model or model
     prompt_tokens = 0
     completion_tokens = 0
     request_id = getattr(request, "state", None) and getattr(request.state, "request_id", None)
@@ -309,7 +324,7 @@ async def stream_chat_response(
         # 使用 shield 防止 Starlette 在流结束后取消后置记录
         try:
             await asyncio.shield(_record_stream_usage(
-                api_key_id, channel, model, prompt_tokens, completion_tokens,
+                api_key_id, channel, recorded_model, model, prompt_tokens, completion_tokens,
                 latency_ms, "/v1/chat/completions"
             ))
         except asyncio.CancelledError:
@@ -390,14 +405,18 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
     if not model:
         raise HTTPException(status_code=400, detail="Missing model parameter")
 
+    # 解析前缀命名空间：`前缀/模型名` → 锁定渠道（仅已注册前缀才拆分）
+    known_prefixes = await ChannelManager.get_registered_prefixes(db)
+    prefix, real_model = parse_model_reference(model, known_prefixes)
+
     api_key_id = getattr(request.state, "api_key_id", None)
     request_id = getattr(request.state, "request_id", None)
     start_time = time.time()
 
     request_logger.log_request("/v1/messages", body, api_key_id=api_key_id, request_id=request_id)
 
-    # 获取所有支持该模型的渠道用于fallback
-    all_channels = await ChannelManager.select_all_channels(db, model, protocol="anthropic")
+    # 获取所有支持该模型（真实模型名）的渠道用于fallback
+    all_channels = await ChannelManager.select_all_channels(db, real_model, protocol="anthropic", prefix=prefix)
     if not all_channels:
         request_logger.log_error(
             "/v1/messages",
@@ -418,7 +437,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
     for attempt in range(min(MAX_FALLBACK_ATTEMPTS, len(all_channels))):
         # 选择渠道（排除已失败的）
         channel = await ChannelManager.select_channel(
-            db, model, exclude_ids=[c.id for c in failed_channels], protocol="anthropic"
+            db, real_model, exclude_ids=[c.id for c in failed_channels], protocol="anthropic", prefix=prefix
         )
         if not channel:
             break
@@ -431,16 +450,20 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
             request_id=request_id,
         )
         provider = create_provider(channel)
-        if not provider.supports_model(model):
+        if not provider.supports_model(real_model):
             request_logger.log_fallback(
                 "/v1/messages",
                 channel.id,
                 model,
-                reason=f"provider does not support model {model}",
+                reason=f"provider does not support model {real_model}",
                 request_id=request_id,
             )
             failed_channels.append(channel)
             continue
+
+        # 构建上游请求体：模型名还原为真实名
+        upstream_body = dict(body)
+        upstream_body["model"] = real_model
 
         try:
             if stream:
@@ -450,12 +473,13 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                 )
                 return StreamingResponse(
                     stream_anthropic_response(
-                        provider, body, channel, api_key_id, request
+                        provider, upstream_body, channel, api_key_id, request,
+                        requested_model=model,
                     ),
                     media_type="text/event-stream",
                 )
             else:
-                response = await provider.chat_completion(body)
+                response = await provider.chat_completion(upstream_body)
                 latency_ms = int((time.time() - start_time) * 1000)
 
                 usage = provider.extract_usage(response)
@@ -472,7 +496,7 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
                 )
 
                 cost = await calculate_cost(
-                    db, model, usage["request_tokens"], usage["response_tokens"]
+                    db, real_model, usage["request_tokens"], usage["response_tokens"]
                 )
                 await UsageRecorder.record(
                     api_key_id=api_key_id,
@@ -610,11 +634,16 @@ async def anthropic_messages(request: Request, db: AsyncSession = Depends(get_db
     _raise_fallback_exhausted(last_error)
 
 
-async def stream_anthropic_response(provider, body, channel, api_key_id, request):
-    """Anthropic流式响应处理"""
+async def stream_anthropic_response(provider, body, channel, api_key_id, request, requested_model=None):
+    """Anthropic流式响应处理
+
+    body: 上游请求体（model=真实模型名用于token估计和provider）
+    requested_model: 客户端请求的模型名（可能带前缀），用于用量记录
+    """
     start_time = time.time()
     total_content = ""
-    model = body.get("model")
+    model = body.get("model")  # 真实模型名，用于 token 估计
+    recorded_model = requested_model or model
     input_tokens = 0
     output_tokens = 0
     request_id = getattr(request, "state", None) and getattr(request.state, "request_id", None)
@@ -681,7 +710,7 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
         # 使用 shield 防止 Starlette 在流结束后取消后置记录
         try:
             await asyncio.shield(_record_stream_usage(
-                api_key_id, channel, model, input_tokens, output_tokens,
+                api_key_id, channel, recorded_model, model, input_tokens, output_tokens,
                 latency_ms, "/v1/messages"
             ))
         except asyncio.CancelledError:
@@ -756,16 +785,20 @@ async def stream_anthropic_response(provider, body, channel, api_key_id, request
 
 
 async def _record_stream_usage(
-    api_key_id, channel, model, request_tokens, response_tokens, latency_ms, endpoint
+    api_key_id, channel, recorded_model, real_model, request_tokens, response_tokens, latency_ms, endpoint
 ):
-    """流结束后记录用量（shield 保护，防止 CancelledError 中断）"""
+    """流结束后记录用量（shield 保护，防止 CancelledError 中断）
+
+    recorded_model: 客户端请求名（可能带前缀），用于用量记录
+    real_model: 真实模型名，用于价格查询
+    """
     async with async_session() as db:
-        cost = await calculate_cost(db, model, request_tokens, response_tokens)
+        cost = await calculate_cost(db, real_model, request_tokens, response_tokens)
         await UsageRecorder.record(
             api_key_id=api_key_id,
             channel_id=channel.id,
             provider=channel.provider_type,
-            model=model,
+            model=recorded_model,
             endpoint=endpoint,
             request_tokens=request_tokens,
             response_tokens=response_tokens,

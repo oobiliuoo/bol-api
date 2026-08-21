@@ -179,6 +179,7 @@
                             <tr>
                                 <th>ID</th>
                                 <th>名称</th>
+                                <th>前缀</th>
                                 <th>协议</th>
                                 <th>模型</th>
                                 <th>状态</th>
@@ -279,6 +280,10 @@
                     <label>渠道名称</label>
                     <input type="text" id="channel-name" placeholder="例如：OpenAI 生产环境">
                 </div>
+                <div class="form-group">
+                    <label>前缀（可选）</label>
+                    <input type="text" id="channel-prefix" placeholder="如 go, ds，用于 `前缀/模型` 精确定位" autocomplete="off">
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>提供商类型</label>
@@ -374,6 +379,13 @@
                     <input type="number" id="setting-timeout" value="300" min="30" max="3600" step="30" placeholder="30-3600">
                     <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
                         超出此时间未收到响应视为超时，建议 120-600 秒
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>追踪起始日期</label>
+                    <input type="date" id="setting-tracking-start">
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                        用于"追踪天数"统计，独立保存，不受日志清理影响
                     </div>
                 </div>
             </div>

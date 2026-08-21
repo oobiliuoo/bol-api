@@ -332,7 +332,7 @@ async function deleteKey(id) {
 // Channels
 async function loadChannels() {
     const tbody = document.querySelector('#channels-table tbody');
-    showTableLoading(tbody, 7);
+    showTableLoading(tbody, 8);
 
     try {
         const res = await fetchWithAuth('/admin/channels');
@@ -343,7 +343,7 @@ async function loadChannels() {
         if (channels.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="7">
+                    <td colspan="8">
                         <div class="empty-state">
                             <div class="empty-state-icon">📡</div>
                             <div>暂无渠道配置，请添加一个以启用 API 代理</div>
@@ -358,6 +358,12 @@ async function loadChannels() {
             <tr>
                 <td><span class="font-mono text-muted">#${c.id}</span></td>
                 <td>${c.name}</td>
+                <td>
+                    ${c.prefix
+                        ? `<span class="prefix-badge">${c.prefix}</span>`
+                        : '<span class="text-muted">—</span>'
+                    }
+                </td>
                 <td>
                     <span class="provider-badge provider-${c.api_protocol || 'openai'}">${c.api_protocol || 'openai'}</span>
                 </td>
@@ -405,6 +411,7 @@ function showChannelModal() {
     document.getElementById('channel-apikey').placeholder = 'sk-...';
     document.getElementById('key-status').style.display = 'none';
     document.getElementById('channel-models').value = '';
+    document.getElementById('channel-prefix').value = '';
     document.getElementById('channel-priority').value = '1';
     document.getElementById('channel-type').value = 'openai';
     document.getElementById('channel-protocol').value = 'openai';
@@ -453,6 +460,7 @@ async function editChannel(id) {
         document.getElementById('channel-apikey').placeholder = '留空保持原值';
         document.getElementById('key-status').style.display = 'inline-flex';
         document.getElementById('channel-models').value = c.models.join(', ');
+        document.getElementById('channel-prefix').value = c.prefix || '';
         document.getElementById('channel-priority').value = c.priority;
         document.getElementById('fetch-models-status').style.display = 'none';
         onChannelTypeChange();
@@ -546,6 +554,7 @@ async function saveChannel() {
 
     try {
         const models = document.getElementById('channel-models').value.split(',').map(m => m.trim()).filter(m => m);
+        const prefixVal = document.getElementById('channel-prefix').value.trim();
         const data = {
             name: document.getElementById('channel-name').value,
             provider_type: document.getElementById('channel-type').value,
@@ -553,7 +562,8 @@ async function saveChannel() {
             base_url: document.getElementById('channel-url').value,
             api_key: document.getElementById('channel-apikey').value,
             models: models,
-            priority: parseInt(document.getElementById('channel-priority').value) || 1
+            priority: parseInt(document.getElementById('channel-priority').value) || 1,
+            prefix: prefixVal || null,
         };
 
         if (!data.name || !data.base_url) {
@@ -1598,6 +1608,7 @@ async function showSettingsModal() {
         if (!res.ok) { showToast('加载设置失败', 'error'); return; }
         const data = await res.json();
         document.getElementById('setting-timeout').value = data.request_timeout || 300;
+        document.getElementById('setting-tracking-start').value = data.tracking_start_date || '';
         document.getElementById('settings-modal').classList.add('show');
     } catch (e) {
         showToast('加载设置失败: ' + e.message, 'error');
@@ -1621,8 +1632,20 @@ async function saveSettings() {
             body: JSON.stringify({key: 'request_timeout', value: String(timeout)})
         });
         if (!res.ok) { showToast('保存设置失败', 'error'); return; }
+
+        // 保存追踪起始日期（可选，留空则不更新）
+        const trackingStart = document.getElementById('setting-tracking-start').value;
+        if (trackingStart) {
+            await fetchWithAuth('/admin/settings/tracking_start_date', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({key: 'tracking_start_date', value: trackingStart})
+            });
+        }
+
         showToast('设置已保存，超时已更新为 ' + timeout + ' 秒', 'success');
         closeSettingsModal();
+        loadStats();
     } catch (e) {
         showToast('保存设置失败: ' + e.message, 'error');
     }

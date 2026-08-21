@@ -13,6 +13,31 @@ from app.providers.custom import CustomProvider
 logger = logging.getLogger(__name__)
 
 
+def parse_model_reference(model: str, known_prefixes: Optional[set] = None) -> Tuple[Optional[str], str]:
+    """解析模型引用，支持 `渠道前缀/真实模型名` 格式
+
+    仅当 `/` 前段是已注册的渠道前缀时才拆分，否则整体视为模型名。
+    这避免了误拆供应商自带的 provider/model 格式（如 "stealth/ox-alpha"）。
+
+    Args:
+        model: 客户端请求的模型名
+        known_prefixes: 当前已注册的渠道前缀集合。为 None 时不拆分（保守）。
+
+    Returns:
+        (prefix, real_model) — 无前缀时 prefix 为 None，real_model 即为原始 model
+    Examples:
+        known={"go","MS"} 时:
+            "go/deepseek-v4-pro" -> ("go", "deepseek-v4-pro")
+            "stealth/ox-alpha"   -> (None, "stealth/ox-alpha")  # stealth 未注册
+            "deepseek-v4-pro"    -> (None, "deepseek-v4-pro")
+    """
+    if known_prefixes and "/" in model:
+        prefix, real = model.split("/", 1)
+        if prefix.strip() in known_prefixes and real.strip():
+            return prefix.strip(), real.strip()
+    return None, model.strip()
+
+
 class ChannelCache:
     """渠道列表缓存（带 TTL）"""
     _instance = None
@@ -94,6 +119,23 @@ class ChannelManager:
         return channels
 
     @staticmethod
+    def _match_by_prefix(channel: Channel, prefix: Optional[str]) -> bool:
+        """检查渠道是否匹配指定前缀。无前缀时不过滤"""
+        if prefix is None:
+            return True
+        return channel.prefix == prefix
+
+    @staticmethod
+    async def get_registered_prefixes(session: AsyncSession) -> set:
+        """获取所有活跃渠道的已注册前缀集合
+
+        用于解析 `前缀/模型名` 时判断 `/` 前段是否为合法渠道前缀，
+        避免误拆供应商自带的 provider/model 格式模型名。
+        """
+        channels = await ChannelManager._get_cached_channels(session)
+        return {c.prefix for c in channels if c.prefix}
+
+    @staticmethod
     def _match_model(channel: Channel, model: str) -> bool:
         """检查渠道是否支持指定模型"""
         models = channel.models or []
@@ -138,22 +180,25 @@ class ChannelManager:
         return channels[-1]
 
     @staticmethod
-    async def select_channel(session: AsyncSession, model: str, exclude_ids: List[int] = None, protocol: Optional[str] = None) -> Optional[Channel]:
+    async def select_channel(session: AsyncSession, model: str, exclude_ids: List[int] = None, protocol: Optional[str] = None, prefix: Optional[str] = None) -> Optional[Channel]:
         """根据模型选择合适的渠道
 
         调度策略：
-        1. 筛选支持该模型的活跃渠道
-        2. 排除已失败的渠道（exclude_ids）
-        3. 按优先级分组（高优先级优先）
-        4. 在最高优先级组内按权重随机选择
+        1. 筛选支持该模型（真实模型名）的活跃渠道
+        2. 如果指定了 prefix，只匹配 prefix 相同的渠道
+        3. 排除已失败的渠道（exclude_ids）
+        4. 按优先级分组（高优先级优先）
+        5. 在最高优先级组内按权重随机选择
         """
         exclude_ids = exclude_ids or []
         channels = await ChannelManager._get_cached_channels(session)
 
-        # 筛选支持该模型且未被排除的渠道
+        # 筛选支持该模型、未被排除、前缀匹配的渠道
         matching_channels = [
             c for c in channels
-            if ChannelManager._match_model(c, model) and c.id not in exclude_ids
+            if ChannelManager._match_model(c, model)
+            and c.id not in exclude_ids
+            and ChannelManager._match_by_prefix(c, prefix)
         ]
 
         # 如果指定了协议，按协议过滤
@@ -182,13 +227,17 @@ class ChannelManager:
         return ChannelManager._select_by_weight(top_group)
 
     @staticmethod
-    async def select_all_channels(session: AsyncSession, model: str, protocol: Optional[str] = None) -> List[Channel]:
+    async def select_all_channels(session: AsyncSession, model: str, protocol: Optional[str] = None, prefix: Optional[str] = None) -> List[Channel]:
         """获取所有支持该模型的渠道（用于fallback）
 
         返回按优先级降序排列的渠道列表
         """
         channels = await ChannelManager._get_cached_channels(session)
-        matching_channels = [c for c in channels if ChannelManager._match_model(c, model)]
+        matching_channels = [
+            c for c in channels
+            if ChannelManager._match_model(c, model)
+            and ChannelManager._match_by_prefix(c, prefix)
+        ]
 
         # 如果指定了协议，按协议过滤
         if protocol is not None:
